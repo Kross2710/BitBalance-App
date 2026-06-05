@@ -5,7 +5,9 @@ on 2026-06-05. The PHP project lives at `~/Projects/BitBalance/`.
 
 - `client/` — Vue 3 + Vite frontend (`npm run dev` at `localhost:5173`)
 - `server/` — Express API (`npm run dev` at `localhost:3000`), MySQL backend
-- `ios-swift/` — SwiftUI iOS app (calls the Express server)
+- `ios-swift/` — SwiftUI iOS app (calls the Express server). **Direction under review (2026-06-05):
+  the mobile app is now being considered as React Native instead of SwiftUI** — treat the Swift
+  code/docs as the previous approach, not a committed target, until this is settled.
 
 ## No emoji
 
@@ -36,11 +38,14 @@ Do **not** use emoji anywhere in this project. This applies to:
 - `server/src/db.js` — MySQL pool
 - `server/src/routes/` — route files (`auth`, `intake`, `dashboard`, `friends`, `profile`, `wrapped`, `pt`, `aiCoach`, `admin`, …)
 - `server/src/lib/` — business logic (xp, streak, achievements, barcode, uploads, …)
-- `server/src/middleware/` — `auth.js` (JWT), `rateLimit.js`, `tz.js`
+- `server/src/middleware/` — `auth.js` (**session-based**, NOT JWT — reads the user row from the
+  express-session + remember-me cookie via `currentUserRow(req)`), `rateLimit.js`, `tz.js`
 
 ### ios-swift/
 
-- `ios-swift/BitBalance/` — Xcode project; calls the Express server via `APIClient.swift`
+- `ios-swift/BitBalance/` — Xcode project; calls the Express server via `APIClient.swift`.
+  **Note (2026-06-05): mobile direction is being reconsidered toward React Native** — this Swift
+  project may be superseded; confirm the chosen stack before extending it.
 
 ## Usernames / identity convention
 

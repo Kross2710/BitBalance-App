@@ -1,5 +1,9 @@
 # Checklist: Gộp 2 bản Swift về 1 nguồn sự thật
 
+> ⚠️ **ĐỊNH HƯỚNG ĐANG XEM XÉT LẠI (2026-06-05):** mobile đang cân nhắc **React Native** thay
+> SwiftUI — checklist gộp bản Swift này có thể không còn cần thiết nếu chuyển stack. Xác nhận
+> hướng đi trước khi thực hiện.
+
 > **Mục tiêu:** giữ bản `ios-swift/BitBalance/` (Xcode project) làm nơi build, cập nhật các file đã cũ hơn trong đó bằng file mới hơn từ `ios-swift/BitBalanceApp/` (bản rời), sau đó xóa bản rời.
 >
 > **Thời gian ước tính:** 30–45 phút.

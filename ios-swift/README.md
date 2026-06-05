@@ -1,5 +1,9 @@
 # BitBalance iOS Migration
 
+> ⚠️ **DIRECTION UNDER REVIEW (2026-06-05):** the mobile app is now being considered as
+> **React Native** instead of SwiftUI. This SwiftUI project is the prior approach and may be
+> superseded — confirm the chosen stack before extending it.
+
 This folder is the starting point for translating the current PHP/MySQL web app into a SwiftUI iOS app.
 
 ## Recommended Architecture

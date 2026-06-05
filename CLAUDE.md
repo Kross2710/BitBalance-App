@@ -1,8 +1,10 @@
 # CLAUDE.md
 
 ## Project focus
-Vue 3 / Express / iOS Swift app — the active migration target from BitBalance PHP.
-Stack: `client/` (Vue 3 + Vite + Pinia), `server/` (Express + MySQL), `ios-swift/` (SwiftUI).
+Vue 3 / Express / mobile app — the active migration target from BitBalance PHP.
+Stack: `client/` (Vue 3 + Vite + Pinia), `server/` (Express + MySQL, **session-based auth**),
+`ios-swift/` (SwiftUI). **Mobile direction under review (2026-06-05): now leaning React Native
+instead of SwiftUI** — Swift code is the prior approach, not a committed target.
 
 ## Design language
 - **Single source of truth**: `client/src/styles.css` (`:root` tokens) + `DESIGN.md`.
