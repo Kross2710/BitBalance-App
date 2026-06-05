@@ -1,5 +1,9 @@
 # BitBalance — Kế hoạch chuyển dịch sang Swift/SwiftUI
 
+> ⚠️ **ĐỊNH HƯỚNG ĐANG XEM XÉT LẠI (2026-06-05):** mobile giờ đang cân nhắc làm **React Native**
+> thay vì SwiftUI. Kế hoạch SwiftUI dưới đây là hướng cũ, có thể bị thay thế — phần định hướng
+> kiến trúc (PHP/Express làm gốc) + đối chiếu API vẫn dùng được cho mọi stack client.
+
 > Tài liệu này gồm 2 phần:
 > 1. **Định hướng kiến trúc** (PHP làm gốc, Swift làm ngọn) — ghi lại từ phần trao đổi.
 > 2. **Đối chiếu thực tế codebase PHP với app iOS hiện tại** + lộ trình hoàn thiện.

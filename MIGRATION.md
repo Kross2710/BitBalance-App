@@ -70,11 +70,24 @@ gần như port 1-1.
 | AI Coach – provider | `call_gemini()` | ✅ `lib/aiProvider.js` | — | Trừu tượng hoá: `AI_PROVIDER=gemini\|openrouter` chọn qua env. Chưa port: **upload ảnh/vision** (text-only v1) — xem nợ kỹ thuật |
 | Meal reminders | — (mới) | ✅ `GET/POST /api/reminders` | ✅ Profile + Dashboard | Bảng `meal_reminder` (1 dòng/user: công tắc tổng + bật/giờ từng bữa). Profile có section "Meal reminders"; Dashboard hiện **nudge in-app** khi giờ bữa đã qua mà chưa log (so giờ Asia/Bangkok, bỏ qua nếu đã dismiss trong ngày — localStorage). Push nền (Service Worker/Web Push) là việc sau |
 | Social/Friends | `api/social/action.php` | ✅ `/api/social/*` | ✅ FriendsView | `poll`/`leaderboard`/`pending-count` (GET) + `search`/`send`/`accept`/`reject`/`cancel`/`unfriend` (POST). Cap 20 lời mời pending/24h; upsert lại row rejected/cancelled; weekly_xp tính từ `xp_event` 7 ngày. UI 4 tab (Friends/Pending/Ranks/Find), poll 15s khi mở tab, tab nav thứ 5 + badge lời mời đến. Chưa port: **block** + enforce `profile_visibility` (PHP cũng chưa enforce); `log_attempt` audit (đồng bộ với các route khác) |
-| Admin panel | `admin/*.php` | ⬜ | ⬜ | module riêng, có auth riêng |
+| **Wrapped (recap)** | `dashboard/handlers/story_data.php` | ✅ `GET /api/wrapped` (`lib/wrapped.js`) | ⚠️ `WrappedStory.vue` | 5 slide (aura/badge/streak/leaderboard/bento) + carousel + cache. **CHƯA: export ảnh PNG 1080×1920 (html2canvas) + Web Share** — phần "wow" để share còn thiếu (xem comment "Image export is P3 — not here yet"). Slide Spotify deferred (`spotify: null`) |
+| **Achievements** | `include/handlers/achievements.php` | ✅ `lib/achievements.js` | ✅ `AchievementCard.vue` | `{summary, records, achievements}`; feed slide badge của Wrapped + dùng ở Progress/Intake |
+| **Progress / weight** | `dashboard-progress.php` | ✅ `GET /api/progress` | ✅ ProgressView | Weight trend + achievements |
+| Admin panel | `admin/*.php` | ✅ `/api/admin/*` (13 endpoint, `requireAdmin`) | ✅ `views/admin/*` (Home/Users/UserDetail/UserCreate/Logs/Barcodes/BarcodeDetail) | Đã port (auth riêng qua `requireAdmin`). Còn lại: rà parity từng probe so PHP |
 | Captcha | `captcha_image.php` (GD) | ⬜ | ⬜ | thay bằng svg-captcha (Node) |
 | App shell / nav | `dashboard/views/sidebar.php` | — | ✅ AppLayout | Sidebar (desktop, hover mở rộng) + bottom tab (mobile) **4 tab** (Home/Intake/Coach/Friends), icon Font Awesome 6. Topbar = logo "BitBalance" (trái) + avatar (phải, vào Profile); Log out đã chuyển vào Profile; greeting "Hi, {name}" nằm ở Dashboard |
 
 > **Forum**: bỏ hoàn toàn theo yêu cầu — không port (đang là dead code bên PHP).
+
+> **Chưa/không port sang Vue (đối chiếu 2026-06-05):**
+> - **Mascot** (`docs/MASCOT.md`, `mascot-evolution-plan.md`): **chưa có dòng code nào** trong
+>   Vue/Express — đang **cân nhắc thêm hoặc không**, chưa chốt.
+> - **Diet & Beats / Spotify** (`docs/BEATS.md`): **không port** — chỉ chừa slot `spotify: null`
+>   trong payload Wrapped.
+> - **Mailer / reset mật khẩu** (`docs/mailer-portability-plan.md`): chưa có (không có
+>   nodemailer/SMTP trong `server/src`).
+> - **Wrapped — export ảnh share**: phần share PNG (html2canvas + Web Share) chưa làm — xem
+>   hàng Wrapped ở bảng trên.
 
 ## TODO / nợ kỹ thuật cần xử lý khi tiếp tục
 
@@ -91,8 +104,10 @@ gần như port 1-1.
 - [ ] **Log out of all devices**: gắn UI gọi revoke-all (hàm thu hồi mọi
       `auth_token` của user đã có sẵn trong `lib/remember.js`) — ví dụ nút trong
       Profile + endpoint `POST /api/auth/logout-all`. Backlog từ nhát auth bundle.
-- [ ] **Session store production**: thay MemoryStore của express-session bằng
-      store bền (Redis hoặc MySQL session store).
+- [x] **Session store production**: ĐÃ thay MemoryStore bằng **express-mysql-session**
+      (store MariaDB, bảng `sessions` tự tạo + quét hết hạn theo giờ) → login sống qua
+      restart. Xem `server/src/index.js` (~dòng 83). Auth là **session-based** (KHÔNG phải
+      JWT) — `middleware/auth.js` đọc `currentUserRow(req)` từ session + remember-me cookie.
 - [ ] **CSRF**: app PHP có `include/csrf.php`. SPA dùng cookie → cân nhắc
       double-submit token hoặc SameSite=strict cho các mutation.
 - [ ] **AI Coach chat vision (ảnh)**: `lib/aiProvider.js` ĐÃ hỗ trợ ảnh (Gemini

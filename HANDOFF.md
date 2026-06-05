@@ -21,7 +21,8 @@ git merge origin/main                             # nếu nhánh tụt sau main
   - **PT epic** (slice 1-5 + disconnect + **PT-initiated invites** `72d6fe7`) — xem mục 3/6.
   - **Sign in with Google** (`d4e0aeb`).
   - **i18n (vue-i18n)** — locale vi/en, đa số view đã localize (session song song).
-  - **BitBalance Wrapped** — recap API + story UI (session song song).
+  - **BitBalance Wrapped** — recap API + story UI (5 slide + carousel). **CHƯA: export ảnh
+    PNG 1080×1920 + Web Share** (phần share còn thiếu — xem `MIGRATION.md`).
   - **Deploy kit** — `DEPLOY.md`, serve SPA từ Express, CachyOS/N100; DB fixes
     (utf8mb4, time_zone +07:00, trust proxy).
 - Push thẳng `main` bị chặn (branch protection) → luôn đưa qua PR từ nhánh này.
@@ -71,8 +72,9 @@ DB test local có thể tụt các cột này — apply trước khi test luồn
 **Tài khoản test (DB `test` XAMPP, password đã set `Test1234!`):** client `24`
 (`kross2710@gmail.com`), client `34` (`vukhanhhung2710@gmail.com`); trainer `39`
 (`pt@gmail.com`), trainer `414` (`coach@bitbalance.test`). 24 là client của 39.
-**Lưu ý:** MemoryStore (dev) **mất session mỗi khi `node --watch` reload** — sửa
-file server xong phải đăng nhập lại.
+**Session store:** ĐÃ chuyển sang **express-mysql-session** (store MariaDB, bảng `sessions`
+tự tạo) — **không còn MemoryStore**, nên login **sống qua `node --watch` reload + restart**.
+Cần DB chạy được để session hoạt động (dev trỏ vào DB `test` XAMPP).
 
 ## 3. Đã port xong
 
@@ -105,8 +107,8 @@ Chi tiết từng endpoint: bảng trạng thái trong `MIGRATION.md`.
    (deploy chưa chốt); iOS còn phải cài PWA ra home screen.
 2. **Log out of all devices** — helper `revokeAllForUser()` đã có sẵn trong
    `lib/remember.js`, chỉ cần thêm endpoint + nút trong Profile.
-3. **Nợ hạ tầng:** session store production (Redis/MySQL thay MemoryStore — hiện
-   MemoryStore mất session khi reload), CSRF cho mutation, captcha (svg-captcha thay
+3. **Nợ hạ tầng:** ~~session store production~~ **ĐÃ XONG** (express-mysql-session, store
+   MariaDB — không còn MemoryStore). Còn lại: CSRF cho mutation, captcha (svg-captcha thay
    PHP GD), AI Coach chat nhận ảnh (vision — provider đã hỗ trợ, route `send`
    chưa nhận upload). **i18n đã xong** (vue-i18n, locale vi/en) — session song song.
    - **Google OAuth đã xong** (`lib/google.js` + routes `GET /api/auth/google`,
