@@ -3,12 +3,21 @@
 // (theme), language, privacy, AI Coach voice (tone + custom persona) and meal
 // reminders. Identity (name/email/bio/avatar) and body/goal stay on Profile.
 import { ref, reactive, onMounted, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { api } from '../lib/api.js';
+import { useAuthStore } from '../stores/auth.js';
 import { useBadgesStore } from '../stores/badges.js';
 import { t, locale, setLocale, locales } from '../i18n/index.js';
 import { setTheme } from '../lib/theme.js';
 
+const auth = useAuthStore();
+const router = useRouter();
 const badgesStore = useBadgesStore();
+
+async function onLogout() {
+  await auth.logout();
+  router.push({ name: 'login' });
+}
 
 const loading = ref(true);
 const saving = ref(false);
@@ -231,6 +240,13 @@ async function saveReminders() {
           <span v-if="remindersMsg" class="ok">{{ remindersMsg }}</span>
         </div>
       </section>
+
+      <!-- Account session: logout lives here (moved from Profile). -->
+      <section class="card logout-card">
+        <button type="button" class="logout-btn" @click="onLogout">
+          <i class="fa-solid fa-right-from-bracket" /> {{ $t('profile.logout') }}
+        </button>
+      </section>
     </template>
   </main>
 </template>
@@ -295,4 +311,17 @@ textarea {
 .rem-meal i { width: 18px; text-align: center; color: var(--muted); }
 .rem-time { width: auto; flex: none; }
 .rem-actions { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+
+.logout-card { padding: 16px; }
+.logout-btn {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--surface-2);
+  color: #f87171;
+  font-weight: 700;
+}
 </style>

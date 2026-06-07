@@ -3,19 +3,12 @@
 // JSON API exposes: account details (name/handle/email), bio, theme, calorie
 // goal, and physical info. Image upload + language are not part of the API yet.
 import { ref, reactive, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
 import { api, browserTz } from '../lib/api.js';
 import AvatarCropper from '../components/AvatarCropper.vue';
 import { useAuthStore } from '../stores/auth.js';
 import { t } from '../i18n/index.js';
 
 const auth = useAuthStore();
-const router = useRouter();
-
-async function onLogout() {
-  await auth.logout();
-  router.push({ name: 'login' });
-}
 
 const loading = ref(true);
 const saving = ref(false);
@@ -229,13 +222,6 @@ const initials = () =>
         <span v-if="error" class="error" style="margin: 0">{{ error }}</span>
       </div>
     </form>
-
-    <!-- Account session: logout lives here (the topbar's logout is being retired). -->
-    <section v-if="!loading" class="card logout-card">
-      <button type="button" class="logout-btn" @click="onLogout">
-        <i class="fa-solid fa-right-from-bracket" /> {{ $t('profile.logout') }}
-      </button>
-    </section>
   </main>
 </template>
 
@@ -303,18 +289,6 @@ textarea {
 .rem-time { width: auto; flex: none; }
 .rem-actions { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
 
-.logout-card { margin-top: 16px; padding: 16px; }
-.logout-btn {
-  width: 100%;
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: var(--surface-2);
-  color: #f87171;
-  font-weight: 700;
-}
 .check {
   display: flex;
   align-items: center;
