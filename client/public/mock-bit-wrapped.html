@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BitBalance — Wrapped pixel mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0f1115; --card:#1a1d24; --inset:#12151b; --accent:#4ade80; --on-accent:#04210f;
+    --text:#e8eaed; --muted:#9aa0a6; --border:#2a2e37; --streak:#fb923c; --violet:#a78bfa; --gold:#ffc857;
+    --pixel:'Press Start 2P', ui-monospace, monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#06070a;color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .lab{font-family:var(--pixel);font-size:9px;color:var(--muted);margin:22px 0 8px;text-align:center;letter-spacing:.06em}
+  .strip{max-width:400px;margin:0 auto;padding:8px 14px 50px}
+  svg.spr{image-rendering:pixelated;shape-rendering:crispEdges;display:block}
+  .px{font-family:var(--pixel)}
+
+  /* a Wrapped "slide" = full phone-aspect frame */
+  .slide{position:relative;height:660px;border-radius:22px;overflow:hidden;border:1px solid var(--border);
+    display:flex;flex-direction:column;padding:54px 26px 30px;
+    /* flat 8px pixel-grid texture, no smooth gradient */
+    background-image:
+      linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+    background-size:8px 8px;}
+  /* top story segments */
+  .segs{position:absolute;top:16px;left:16px;right:16px;display:flex;gap:5px;z-index:3}
+  .segs i{flex:1;height:5px;border-radius:1px;background:rgba(255,255,255,.22)}
+  .segs i.done{background:#fff}
+  .segs i.now{background:var(--accent)}
+  .xbtn{position:absolute;top:28px;right:18px;z-index:3;font-family:var(--pixel);font-size:12px;color:#fff;opacity:.8}
+  .kick{font-family:var(--pixel);font-size:10px;color:var(--accent);letter-spacing:.1em}
+
+  /* slide 1 — class card */
+  .s-class{background-color:#160f2b}
+  .s-class .center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center}
+  .s-class .title{font-family:var(--pixel);font-size:22px;line-height:1.4;color:var(--violet);margin:14px 0 6px}
+  .s-class .desc{font-size:15px;font-weight:600;line-height:1.5;max-width:90%;opacity:.92}
+  .s-class .cap{font-size:13px;font-weight:700;opacity:.8;margin-top:auto}
+  .auraframe{position:relative;display:grid;place-items:center}
+  .auraframe .dot{position:absolute;width:7px;height:7px}
+
+  /* slide 2 — streak / on fire */
+  .s-streak{background-color:#2a1207;align-items:center;text-align:center}
+  .s-streak .num{font-family:var(--pixel);font-size:46px;color:var(--streak);margin:18px 0 2px}
+  .s-streak .num small{font-size:16px;color:var(--text);opacity:.7}
+  .s-streak .onfire{font-family:var(--pixel);font-size:14px;color:var(--gold);letter-spacing:.12em;margin-top:10px}
+  .s-streak .cap{font-size:14px;font-weight:700;opacity:.85;margin-top:auto}
+
+  /* slide 3 — high scores */
+  .s-lb{background-color:#0c1a2e}
+  .s-lb .hs{font-family:var(--pixel);font-size:16px;color:var(--gold);text-align:center;margin:6px 0 22px;letter-spacing:.08em}
+  .row{display:flex;align-items:center;gap:12px;font-family:var(--pixel);font-size:12px;padding:11px 12px;border-radius:8px;margin-bottom:9px;background:rgba(255,255,255,.04)}
+  .row .rk{width:26px;color:var(--muted)}
+  .row .nm{flex:1;letter-spacing:.04em}
+  .row .sc{color:var(--accent)}
+  .row.me{background:rgba(74,222,128,.12);box-shadow:inset 0 0 0 1px var(--accent)}
+  .row.r1 .rk{color:var(--gold)} .row.r2 .rk{color:#cbd5e1} .row.r3 .rk{color:#d8924e}
+  .s-lb .cap{font-size:13px;font-weight:700;opacity:.8;text-align:center;margin-top:auto}
+
+  /* slide 4 — results screen */
+  .s-sum{background-color:#0f1622}
+  .s-sum .done-h{font-family:var(--pixel);font-size:17px;color:var(--accent);text-align:center;margin:4px 0 4px}
+  .s-sum .wk{font-size:13px;color:var(--muted);text-align:center;margin-bottom:18px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+  .cell{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:14px;padding:16px;
+    display:flex;flex-direction:column;gap:9px;min-height:96px;justify-content:space-between}
+  .cell .cl{font-family:var(--pixel);font-size:8px;color:var(--muted);letter-spacing:.04em}
+  .cell .cv{font-family:var(--pixel);font-size:20px}
+  .cell .cv.sm{font-size:12px;line-height:1.5}
+  .cell.feat{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between}
+  .tag{font-family:var(--pixel);font-size:9px;color:var(--on-accent);background:var(--accent);padding:7px 10px;border-radius:8px}
+  .lvl{font-family:var(--pixel);font-size:13px;margin-top:8px}
+  .replay{margin-top:18px;min-height:50px;border-radius:12px;background:var(--accent);color:var(--on-accent);
+    font-family:var(--pixel);font-size:12px;display:flex;align-items:center;justify-content:center;gap:10px}
+</style>
+</head>
+<body>
+<div class="strip">
+
+  <p class="lab">SLIDE 1 / 5 — YOUR CLASS</p>
+  <section class="slide s-class">
+    <div class="segs"><i class="now"></i><i></i><i></i><i></i><i></i></div>
+    <span class="xbtn">X</span>
+    <div class="center">
+      <span class="kick">THIS WEEK YOU WERE</span>
+      <div class="auraframe" id="aura"></div>
+      <div class="title">PROTEIN<br>PALADIN</div>
+      <p class="desc">High-protein, steady streaks, never skips breakfast. A defensive build.</p>
+      <p class="cap">Logged 18 high-protein meals this week.</p>
+    </div>
+  </section>
+
+  <p class="lab">SLIDE 3 / 5 — STREAK</p>
+  <section class="slide s-streak">
+    <div class="segs"><i class="done"></i><i class="done"></i><i class="now"></i><i></i><i></i></div>
+    <span class="xbtn">X</span>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
+      <span id="flameBig"></span>
+      <div class="num">14<small> days</small></div>
+      <span class="kick">CURRENT STREAK</span>
+      <div class="onfire">- ON FIRE -</div>
+    </div>
+    <p class="cap">Your longest run yet. Don't break the chain.</p>
+  </section>
+
+  <p class="lab">SLIDE 4 / 5 — HIGH SCORES</p>
+  <section class="slide s-lb">
+    <div class="segs"><i class="done"></i><i class="done"></i><i class="done"></i><i class="now"></i><i></i></div>
+    <span class="xbtn">X</span>
+    <div class="hs">HIGH SCORES</div>
+    <div id="lb"></div>
+    <p class="cap">You climbed 2 ranks this week.</p>
+  </section>
+
+  <p class="lab">SLIDE 5 / 5 — WEEK COMPLETE</p>
+  <section class="slide s-sum">
+    <div class="segs"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="now"></i></div>
+    <span class="xbtn">X</span>
+    <div class="done-h">WEEK COMPLETE</div>
+    <div class="wk">Hung's week in food</div>
+    <div class="grid">
+      <div class="cell feat">
+        <div><span class="tag">PROTEIN PALADIN</span><div class="lvl">LV 7</div></div>
+        <span id="medalSm"></span>
+      </div>
+      <div class="cell"><span class="cl">FOODS LOGGED</span><span class="cv">231</span></div>
+      <div class="cell"><span class="cl">DAYS LOGGED</span><span class="cv">7/7</span></div>
+      <div class="cell"><span class="cl">DAY STREAK</span><span class="cv" style="color:var(--streak)">14</span></div>
+      <div class="cell"><span class="cl">TOP FUEL</span><span class="cv sm">Pho Bo</span></div>
+    </div>
+    <div class="replay"><span id="replayIc"></span> SHARE</div>
+  </section>
+
+  <p class="lab">Wrapped reimagined as a retro game recap — same pixel "Bit" world, flat colour blocks (no smooth gradient), no emoji.</p>
+</div>
+
+<script>
+function sprite(rows,palette,px){
+  const h=rows.length,w=Math.max(...rows.map(r=>r.length)),S=px||7;let c='';
+  for(let y=0;y<h;y++)for(let x=0;x<rows[y].length;x++){const ch=rows[y][x];
+    if(ch==='.'||ch===' ')continue;const col=palette[ch];if(!col)continue;
+    c+=`<rect x="${x}" y="${y}" width="1" height="1" fill="${col}"/>`;}
+  return `<svg class="spr" width="${w*S}" height="${h*S}" viewBox="0 0 ${w} ${h}">${c}</svg>`;
+}
+const A='#4ade80',D='#04210f',W='#e8eaed',O='#fb923c',Y='#ffd166',G='#ffc857',V='#a78bfa';
+
+/* Bit in a paladin/aura pose — buddy with a little shield */
+const bitHero=sprite([
+  '...VVVVVVVV...','..VddddddddV..','.VddddddddddV.','VddddddddddddV',
+  'VddWWddddWWddV','VddWWddddWWddV','VddddddddddddV','VddddddddddddV',
+  'VdddVVVVVVddddV','VddddddddddddV','.VddddddddddV.','..VVV.VV.VVV..',
+  '..VV...VV..VV.','..VV...VV...V.',
+],{V:V,d:'#160f2b',W:W},11);
+
+const flameBig=sprite([
+  '......oo......','.....oooo.....','....oooooo....','....ooyyoo....',
+  '...oooyyooo...','...ooyyyyoo...','..oooyyyyooo..','..ooyyYYyyoo..',
+  '.oooyYYYYyooo.','.ooyyYYYYyyoo.','.ooyyYYYYyyoo.','..ooyyYYyyoo..',
+  '..oooyyyyooo..','...oooooooo...','....oooooo....','.....oooo.....',
+],{o:O,y:Y,Y:W},9);
+
+const medal=sprite([
+  '...GGGGGG...','..GddddddG..','.GddGGGGddG.','GddGGGGGGddG','GdGGGyGGGGdG',
+  'GdGGyyyGGGdG','GdGyyyyyGGdG','GdGGyyyGGGdG','GddGGyGGGddG','.GddGGGGddG.',
+  '..GddddddG..','...G.GG.G...','...G.GG.G...','....GGGG....',
+],{G:A,d:D,y:G},6);
+
+const share=sprite([
+  '....AA','..AAAA','AAAA..','..AAAA','....AA',
+],{A:'#04210f'},5);
+
+document.getElementById('aura').innerHTML=bitHero;
+document.getElementById('flameBig').innerHTML=flameBig;
+document.getElementById('medalSm').innerHTML=medal;
+document.getElementById('replayIc').innerHTML=share;
+
+/* aura particles around the class mascot */
+const af=document.getElementById('aura');
+[[ -14,-8,A],[150,4,G],[160,90,V],[-18,80,V],[6,-20,G],[140,-16,A]].forEach(([l,t,c])=>{
+  const d=document.createElement('span');d.className='dot';
+  d.style.left=l+'px';d.style.top=t+'px';d.style.background=c;af.appendChild(d);});
+
+/* high-score table */
+const LB=[['1','HUNG','2480',true,'r1'],['2','MINH','2210',false,'r2'],['3','LAN','1980',false,'r3'],['4','KHANG','1450',false,'']];
+const lb=document.getElementById('lb');
+LB.forEach(([rk,nm,sc,me,cls])=>{const d=document.createElement('div');
+  d.className='row '+cls+(me?' me':'');
+  d.innerHTML=`<span class="rk">${rk}</span><span class="nm">${nm}</span><span class="sc">${sc}</span>`;
+  lb.appendChild(d);});
+</script>
+</body>
+</html>
