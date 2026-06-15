@@ -78,6 +78,26 @@ export function macroGoalsFromCalories(goal) {
   };
 }
 
+// Stored-or-derived macro goals (ports resolveMacroGoals() from functions.php).
+// If the latest userGoal row carries an explicit P/C/F split (the macro-balance
+// editor or a PT proposal wrote it), use that; otherwise fall back to the derived
+// 30/45/25 split. resolveMacrosFromGoalRow works off an already-fetched goal row;
+// resolveMacroGoals fetches the latest row itself.
+export function resolveMacrosFromGoalRow(row) {
+  if (row && row.protein_goal != null && row.carbs_goal != null && row.fat_goal != null) {
+    return { protein: Number(row.protein_goal), carbs: Number(row.carbs_goal), fat: Number(row.fat_goal) };
+  }
+  return macroGoalsFromCalories(row?.calorie_goal ? Number(row.calorie_goal) : null);
+}
+
+export async function resolveMacroGoals(userId) {
+  const rows = await query(
+    'SELECT calorie_goal, protein_goal, carbs_goal, fat_goal FROM userGoal WHERE user_id = ? ORDER BY date_set DESC, userGoal_id DESC LIMIT 1',
+    [userId]
+  );
+  return resolveMacrosFromGoalRow(rows[0] || null);
+}
+
 // Mirrors api_intake_fetch(): one entry scoped to its owner.
 export async function fetchEntry(userId, intakeId) {
   const rows = await query(
@@ -106,10 +126,11 @@ export async function dailySummary(userId, date = null, shift = 0) {
   const totalCalories = Number(total);
 
   const goalRows = await query(
-    'SELECT calorie_goal FROM userGoal WHERE user_id = ? ORDER BY date_set DESC LIMIT 1',
+    'SELECT calorie_goal, protein_goal, carbs_goal, fat_goal FROM userGoal WHERE user_id = ? ORDER BY date_set DESC, userGoal_id DESC LIMIT 1',
     [userId]
   );
-  const goal = goalRows[0]?.calorie_goal ? Number(goalRows[0].calorie_goal) : null;
+  const goalRow = goalRows[0] || null;
+  const goal = goalRow?.calorie_goal ? Number(goalRow.calorie_goal) : null;
 
   let percentage = 0;
   if (goal && goal > 0) {
@@ -137,7 +158,7 @@ export async function dailySummary(userId, date = null, shift = 0) {
       carbs: Number(macroRow.carbs),
       fat: Number(macroRow.fat),
     },
-    macro_goals: macroGoalsFromCalories(goal),
+    macro_goals: resolveMacrosFromGoalRow(goalRow),
     macro_coverage: {
       logged: Number(macroRow.macro_count),
       total: Number(macroRow.entry_count),

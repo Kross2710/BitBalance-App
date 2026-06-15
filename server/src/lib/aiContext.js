@@ -41,7 +41,7 @@ export async function buildUserContext(userId, shift = 0, today = todayVN()) {
     `SELECT calorie_goal, protein_goal, carbs_goal, fat_goal, source, date_set
        FROM userGoal
       WHERE user_id = ?
-      ORDER BY date_set DESC
+      ORDER BY date_set DESC, userGoal_id DESC
       LIMIT 1`,
     [userId]
   );

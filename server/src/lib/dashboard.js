@@ -38,7 +38,7 @@ export async function macroTotalsForDate(userId, date, shift = 0) {
 
 export async function calorieGoal(userId) {
   const rows = await query(
-    'SELECT calorie_goal FROM userGoal WHERE user_id = ? ORDER BY date_set DESC LIMIT 1',
+    'SELECT calorie_goal FROM userGoal WHERE user_id = ? ORDER BY date_set DESC, userGoal_id DESC LIMIT 1',
     [userId]
   );
   return rows[0]?.calorie_goal ? Number(rows[0].calorie_goal) : null;

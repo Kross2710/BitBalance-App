@@ -11,6 +11,7 @@
 // (req.session.xp_levelup_flash), the equivalent of PHP's $_SESSION usage.
 import { pool, query } from '../db.js';
 import { addDays, todayVN } from './dates.js';
+import { resolveMacrosFromGoalRow } from './intake.js';
 
 export const XP_RULES = {
   intake_log: { xp: 10, cap: 4 },
@@ -229,7 +230,7 @@ export async function finalizeYesterdayGoals(userId, session, shift = 0, today =
   const t = sumRows[0];
 
   const goalRows = await query(
-    'SELECT calorie_goal FROM userGoal WHERE user_id = ? AND DATE(date_set) <= ? ORDER BY date_set DESC LIMIT 1',
+    'SELECT calorie_goal, protein_goal, carbs_goal, fat_goal FROM userGoal WHERE user_id = ? AND DATE(date_set) <= ? ORDER BY date_set DESC, userGoal_id DESC LIMIT 1',
     [userId, yesterday]
   );
   const calGoal = Number(goalRows[0]?.calorie_goal ?? 0);
@@ -245,12 +246,10 @@ export async function finalizeYesterdayGoals(userId, session, shift = 0, today =
       if (r.leveled_up) leveledUp = true;
     }
 
-    // Macro hit: each macro within ±15% of target; need all three.
-    const macroGoals = {
-      protein: Math.round((calGoal * 0.3) / 4),
-      carbs: Math.round((calGoal * 0.45) / 4),
-      fat: Math.round((calGoal * 0.25) / 9),
-    };
+    // Macro hit: each macro within ±15% of target; need all three. Grade against
+    // the SAME stored-or-derived split the cards show (a custom split set in the
+    // macro editor counts), not always the derived 30/45/25.
+    const macroGoals = resolveMacrosFromGoalRow(goalRows[0]);
     const within = (actual, target) => target > 0 && actual >= target * 0.85 && actual <= target * 1.15;
     if (
       within(Number(t.p), macroGoals.protein) &&
