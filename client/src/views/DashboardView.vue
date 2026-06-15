@@ -260,6 +260,7 @@ onMounted(() => {
                   class="entry-thumb"
                   width="40"
                   height="40"
+                  loading="lazy"
                   decoding="async"
                   :alt="$t('dashboard.entry.photo_alt')"
                   @click="lightbox = e.image_path"

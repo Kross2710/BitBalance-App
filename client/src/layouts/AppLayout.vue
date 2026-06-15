@@ -118,7 +118,7 @@ watch(
           <i class="fa-solid" :class="item.icon" />
           <span v-if="badges[item.to]" class="badge">{{ badges[item.to] }}</span>
         </span>
-        <span>{{ item.label }}</span>
+        <span>{{ $t(item.labelKey) }}</span>
       </RouterLink>
     </nav>
   </div>

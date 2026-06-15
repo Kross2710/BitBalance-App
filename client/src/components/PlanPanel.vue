@@ -367,11 +367,11 @@ const macroGoalGrams = computed(() => {
           </select>
 
           <template v-if="!isMaintain">
-            <label class="fld">
+            <label class="fld" for="plan-rate">
               {{ $t('plan.field.weekly_rate') }}
               <span class="muted">· {{ $t('plan.field.weekly_rate_unit', { n: Number(form.weekly_rate).toFixed(2) }) }}</span>
             </label>
-            <input class="range" type="range" min="0" max="1.5" step="0.05" v-model.number="form.weekly_rate" />
+            <input id="plan-rate" class="range" type="range" min="0" max="1.5" step="0.05" v-model.number="form.weekly_rate" />
 
             <label class="fld" for="plan-target">
               {{ $t('plan.field.target_weight') }} <span class="muted">{{ $t('plan.field.target_weight_hint') }}</span>

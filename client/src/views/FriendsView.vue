@@ -180,7 +180,6 @@ const splitOnLink = (key) => {
   const [before = '', after = ''] = t(key).split('{link}');
   return { before, after };
 };
-const noFriendsParts = computed(() => splitOnLink('friends.empty.no_friends_inline'));
 const soloLbParts = computed(() => splitOnLink('friends.lb.solo_inline'));
 </script>
 
@@ -230,9 +229,12 @@ const soloLbParts = computed(() => splitOnLink('friends.lb.solo_inline'));
     <!-- FRIENDS -->
     <section v-if="tab === 'friends'" key="friends">
       <p v-if="loading" class="muted">{{ $t('common.loading') }}</p>
-      <p v-else-if="!friends.length" class="muted empty">
-        {{ noFriendsParts.before }}<button class="link" @click="tab = 'find'">{{ $t('friends.tab.find_short') }}</button>{{ noFriendsParts.after }}
-      </p>
+      <div v-else-if="!friends.length" class="find-empty">
+        <i class="fa-solid fa-user-group" />
+        <strong>{{ $t('friends.empty.no_friends_title') }}</strong>
+        <p class="muted">{{ $t('friends.empty.no_friends_hint') }}</p>
+        <button class="btn primary cta" @click="tab = 'find'"><i class="fa-solid fa-user-plus" /> {{ $t('friends.empty.find_cta') }}</button>
+      </div>
       <ul v-else class="list">
         <li v-for="u in friends" :key="u.user_id" class="row card">
           <button type="button" class="row-tap" @click="openProfile(u.user_id)">
@@ -519,6 +521,7 @@ const soloLbParts = computed(() => splitOnLink('friends.lb.solo_inline'));
 .find-empty > i { font-size: 32px; color: var(--muted); }
 .find-empty strong { font-size: 16px; }
 .find-empty p { margin: 0; max-width: 320px; font-size: 13px; line-height: 1.5; }
+.find-empty .cta { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 4px; }
 
 /* Tab panel switch — quick fade + slight slide (out-in, so variable-height
    panels never overlap). Replaces the loading-bar flash on tab change. */

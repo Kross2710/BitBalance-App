@@ -702,7 +702,7 @@ onBeforeUnmount(() => {
 
       <!-- Calories -->
       <label for="intake-kcal">{{ $t('intake.calories_label') }}</label>
-      <input id="intake-kcal" v-model="form.calories" type="number" min="1" step="any" :placeholder="$t('common.kcal')" required />
+      <input id="intake-kcal" v-model="form.calories" type="number" inputmode="decimal" min="1" step="any" :placeholder="$t('common.kcal')" required />
 
       <!-- Optional macros: a light summary row toggles the tray open. -->
       <button type="button" class="macro-toggle" :aria-expanded="showMacros" @click="showMacros = !showMacros">
@@ -755,7 +755,7 @@ onBeforeUnmount(() => {
               @click="lightbox = e.image_path"
               :aria-label="$t('intake.detail.view_photo')"
             >
-              <img :src="e.image_path" class="entry-thumb" :alt="$t('intake.food_photo_alt')" />
+              <img :src="e.image_path" class="entry-thumb" loading="lazy" decoding="async" :alt="$t('intake.food_photo_alt')" />
               <span class="entry-thumb-zoom" aria-hidden="true"><i class="fa-solid fa-magnifying-glass-plus" /></span>
             </button>
             <button type="button" class="entry-body" @click="openDetail(e)" :aria-label="$t('intake.detail.open', { name: e.food_item })">
@@ -791,6 +791,14 @@ onBeforeUnmount(() => {
           </div>
         </li>
       </ul>
+    </section>
+
+    <!-- Empty state: no entries yet for the active day. summary is set by the same
+         load as entries, so gate on it to avoid flashing this before the first load. -->
+    <section v-else-if="summary" class="entries-empty card">
+      <i class="fa-solid fa-bowl-food" />
+      <strong>{{ $t('intake.entries_empty_title') }}</strong>
+      <p class="muted">{{ $t('intake.entries_empty_hint') }}</p>
     </section>
 
     <!-- Barcode scanner modal -->
@@ -867,7 +875,7 @@ onBeforeUnmount(() => {
         </div>
 
         <label for="edit-kcal">{{ $t('intake.calories_label') }}</label>
-        <input id="edit-kcal" v-model="editForm.calories" type="number" min="1" step="any" :placeholder="$t('common.kcal')" />
+        <input id="edit-kcal" v-model="editForm.calories" type="number" inputmode="decimal" min="1" step="any" :placeholder="$t('common.kcal')" />
 
         <label>{{ $t('intake.macros_optional') }}</label>
         <MacroInputs v-model:protein="editForm.protein" v-model:carbs="editForm.carbs" v-model:fat="editForm.fat" />
@@ -1181,6 +1189,12 @@ label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px
   font-size: 14px;
 }
 .icon-btn.danger { color: #f87171; }
+
+/* Empty state when no entries are logged for the active day. */
+.entries-empty { text-align: center; margin-top: 18px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.entries-empty > i { font-size: 30px; color: var(--muted); }
+.entries-empty strong { font-size: 15px; }
+.entries-empty p { margin: 0; max-width: 280px; }
 
 /* Entry detail sheet */
 .detail { display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding-bottom: 4px; }
