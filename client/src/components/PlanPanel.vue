@@ -140,6 +140,23 @@ const etaDateLabel = computed(() => {
     day: 'numeric',
   });
 });
+
+// BMI + healthy-weight range from the profile metrics already in the snapshot
+// (pure display, no extra request). Bands: <18.5 under, <25 normal, <30 over, else obese.
+const bmi = computed(() => {
+  const w = Number(snapshot.value?.physical?.weight);
+  const h = Number(snapshot.value?.physical?.height);
+  if (!(w > 0) || !(h > 0)) return null;
+  const m = h / 100;
+  const value = w / (m * m);
+  const category = value < 18.5 ? 'underweight' : value < 25 ? 'normal' : value < 30 ? 'overweight' : 'obese';
+  return {
+    value: Math.round(value * 10) / 10,
+    category,
+    idealMin: Math.round(18.5 * m * m),
+    idealMax: Math.round(24.9 * m * m),
+  };
+});
 </script>
 
 <template>
@@ -171,6 +188,16 @@ const etaDateLabel = computed(() => {
             <span class="muted">{{ $t('plan.metric.current_weight') }}</span>
             <strong>{{ snapshot.physical.weight != null ? snapshot.physical.weight + ' kg' : '—' }}</strong>
           </div>
+        </div>
+
+        <!-- BMI + healthy-weight range -->
+        <div v-if="bmi" class="bmi card">
+          <div class="bmi-main">
+            <span class="muted">{{ $t('plan.bmi.title') }}</span>
+            <strong>{{ bmi.value }}</strong>
+            <span class="bmi-cat" :class="bmi.category">{{ $t('plan.bmi.cat.' + bmi.category) }}</span>
+          </div>
+          <span class="muted">{{ $t('plan.bmi.ideal', { min: bmi.idealMin, max: bmi.idealMax }) }}</span>
         </div>
 
         <!-- Inputs -->
@@ -300,6 +327,15 @@ const etaDateLabel = computed(() => {
 }
 .metric strong { font-size: 14px; }
 .metric .muted { font-size: 11px; }
+
+/* BMI block */
+.bmi { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+.bmi-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.bmi-main > strong { font-size: 20px; }
+.bmi-cat { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.bmi-cat.normal { color: var(--accent); }
+.bmi-cat.underweight, .bmi-cat.overweight { color: #fb923c; }
+.bmi-cat.obese { color: #f87171; }
 
 /* Goal-mode segmented control */
 .mode-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
