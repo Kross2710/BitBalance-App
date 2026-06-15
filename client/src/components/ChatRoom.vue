@@ -121,7 +121,7 @@ defineExpose({ scrollToBottom });
         :disabled="sending"
         @keydown.enter.exact.prevent="send"
       />
-      <button type="submit" :disabled="sending || !input.trim()"><i class="fa-solid fa-paper-plane" /></button>
+      <button type="submit" :disabled="sending || !input.trim()"><i class="fa-solid" :class="sending ? 'fa-spinner fa-spin' : 'fa-paper-plane'" /></button>
     </form>
   </div>
 </template>

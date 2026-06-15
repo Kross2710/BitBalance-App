@@ -97,10 +97,13 @@ onBeforeUnmount(() => {
 }
 .sheet__close {
   flex: none;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   min-height: 0;
   padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
   background: transparent;
   color: var(--muted);
 }
