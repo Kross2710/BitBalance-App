@@ -142,6 +142,7 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 app.use('/api/ai-coach/send', aiLimiter);
 app.use('/api/intake/estimate-photo', aiLimiter);
+app.use('/api/intake/estimate-macros', aiLimiter);
 app.use('/api/intake/ai-chat', aiLimiter);
 
 app.use('/api/auth', authRoutes);
