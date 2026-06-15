@@ -42,6 +42,20 @@ const CHAT_BASE =
   '{"food_name":"Name","calories":0,"protein":0,"carbs":0,"fat":0,"unit":"1 serving","short_advice":"one short tip"}. ' +
   'If you cannot identify a food yet, set food_name to null and put a short clarifying question in short_advice.';
 
+// Macro-only estimate for the manual-entry path: the user already typed a dish
+// name and a FIXED calorie amount, so we ask the model for the protein/carbs/fat
+// split that FITS that calorie figure (4 kcal/g protein + 4 carbs + 9 fat) rather
+// than re-estimating calories. Same JSON shape so parseEstimate still applies; we
+// only read its macros and keep the user's calorie value.
+const MACRO_BASE =
+  'You are a professional Nutritionist AI. The user logged a food with a known name and a FIXED ' +
+  'calorie amount. Estimate the macronutrient split (protein, carbs, fat in grams) for a typical ' +
+  'portion of that dish at THAT exact calorie amount. The macros must be consistent with the ' +
+  'calories: protein*4 + carbs*4 + fat*9 should be within about 10 percent of the given calories. ' +
+  'Do not change the calorie number. If the dish is unclear, return a reasonable typical split. ' +
+  'Reply with ONLY a raw JSON object (no markdown, no code fences) of exactly this shape: ' +
+  '{"food_name":"Name","calories":0,"protein":0,"carbs":0,"fat":0,"unit":"1 serving","short_advice":""}';
+
 // Per-user voice/language: append the shared tone+persona+language guidance (from
 // Settings) so the Intake AI's short_advice matches the user's chosen AI voice and
 // preferred language, the same way the AI Coach does. Built per request from req.user.
@@ -195,6 +209,53 @@ router.post('/estimate-photo', requireAuth, upload.single('image'), async (req, 
     }
 
     res.json({ ok: true, data: { ...parsed, image_path: imagePath }, message: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// AI macro estimate — the manual-entry counterpart of /estimate-photo. Given the
+// food name + the calories the user already typed, returns just the {protein,
+// carbs, fat} split (consistent with those calories) to prefill the optional
+// macro fields. No image, no persistence. Shares the same daily AI budget as the
+// Coach, checked before the paid call so an over-quota user never incurs cost.
+router.post('/estimate-macros', requireAuth, async (req, res, next) => {
+  try {
+    const foodItem = String(req.body?.food_item ?? '').trim().slice(0, 80);
+    const calories = Math.round(Number(req.body?.calories));
+    if (foodItem === '' || !Number.isFinite(calories) || calories < 1 || calories > 5000) {
+      return res.status(422).json({ ok: false, data: null, message: 'A food name and calories (1-5000) are required.' });
+    }
+    if (await aiQuotaExceeded(req.user.user_id, req.todayTz)) {
+      return res.status(429).json({ ok: false, data: null, message: aiLimitMsg });
+    }
+
+    const result = await chatCompletion({
+      system: MACRO_BASE,
+      history: [{ role: 'user', content: `Food: ${foodItem}. Calories: ${calories} kcal. Return the protein, carbs and fat in grams for this exact calorie amount.` }],
+    });
+    if (!result.ok) {
+      return res.status(502).json({ ok: false, data: null, message: result.error || 'AI error' });
+    }
+    // Successful model call (cost incurred) — count it against the daily budget.
+    await bumpAiUsage(req.user.user_id, req.todayTz);
+
+    const parsed = parseEstimate(result.text);
+    if (!parsed) {
+      return res.status(502).json({ ok: false, data: null, message: 'AI could not estimate macros for this item.' });
+    }
+    // Enforce the calorie-consistency the prompt asks for, rather than trusting the
+    // model: the split must roughly reconstruct the user's calories (4/4/9 kcal per
+    // gram). This also subsumes the all-zero case. A wildly inconsistent split means
+    // the model misread the item, so reject it instead of filling implausible macros
+    // the note would (mis)label as a calorie-based estimate. 40% is a loose backstop
+    // — the prompt targets within 10%, so this only catches egregious misses.
+    const macroKcal = parsed.protein * 4 + parsed.carbs * 4 + parsed.fat * 9;
+    if (macroKcal <= 0 || Math.abs(macroKcal - calories) > calories * 0.4) {
+      return res.status(502).json({ ok: false, data: null, message: 'AI could not estimate macros for this item.' });
+    }
+
+    res.json({ ok: true, data: { protein: parsed.protein, carbs: parsed.carbs, fat: parsed.fat }, message: null });
   } catch (err) {
     next(err);
   }

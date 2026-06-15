@@ -41,6 +41,8 @@ const suggestions = ref([]);
 const showSuggest = ref(false);
 const foodFocused = ref(false);
 const saving = ref(false);
+const aiFilling = ref(false); // AI macro estimate in flight
+const aiFilled = ref(false); // macros came from the AI estimate (show the note)
 const error = ref('');
 const success = ref('');
 const undoEntry = ref(null); // last-deleted row, pending undo
@@ -77,6 +79,38 @@ function celebrateFromLog(res) {
 function clearMessages() {
   success.value = '';
   clearTimeout(successTimer);
+}
+
+// AI macro fill: estimate protein/carbs/fat from the food name + calories the
+// user already typed, so they don't have to know the split themselves. Fills the
+// (still editable) macro fields and opens the tray so the estimate is visible and
+// tweakable. Macros stay optional — a quota or parse failure just surfaces a
+// message via `error` and never blocks logging.
+async function fillMacrosWithAi() {
+  if (!canSubmit.value || aiFilling.value) return;
+  error.value = '';
+  aiFilling.value = true;
+  // Snapshot the inputs this request is for, so a response that lands after the
+  // user has changed the dish/calories (an LLM round-trip is seconds long) is
+  // discarded instead of writing macros tuned to the old inputs.
+  const sentFood = form.food_item.trim();
+  const sentCalories = Number(form.calories);
+  try {
+    const data = await api.post('/api/intake/estimate-macros', {
+      food_item: sentFood,
+      calories: sentCalories,
+    });
+    if (form.food_item.trim() !== sentFood || Number(form.calories) !== sentCalories) return;
+    form.protein = data.protein;
+    form.carbs = data.carbs;
+    form.fat = data.fat;
+    showMacros.value = true;
+    aiFilled.value = true;
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    aiFilling.value = false;
+  }
 }
 
 async function loadRecent() {
@@ -131,6 +165,8 @@ const editForm = reactive({ intake_id: 0, food_item: '', calories: '', meal_cate
 // open flag; lightbox holds the enlarged photo src.
 const detailEntry = ref(null);
 const lightbox = ref('');
+// id of the entry whose macros are being AI-filled (per-row spinner); 0 = none.
+const backfillingId = ref(0);
 
 async function loadEntries() {
   try {
@@ -188,6 +224,43 @@ async function removeEntry(e) {
     showUndo(res.deleted_row);
   } catch (err) {
     error.value = err.message;
+  }
+}
+
+// A logged entry counts as "has macros" if any of P/C/F is set. Entries logged
+// with calories only (macros optional) show the AI back-fill action below.
+function entryHasMacros(e) {
+  return Number(e.protein) > 0 || Number(e.carbs) > 0 || Number(e.fat) > 0;
+}
+
+// Back-fill macros on an already-logged entry that has none: estimate from its
+// food name + calories, then persist via the normal update route. Macros stay
+// optional, so a quota/parse failure just surfaces a message and leaves the entry
+// untouched. One at a time (guarded) to respect the shared AI budget.
+async function backfillMacros(e) {
+  if (backfillingId.value !== 0) return;
+  error.value = '';
+  clearMessages();
+  backfillingId.value = e.id;
+  try {
+    const data = await api.post('/api/intake/estimate-macros', {
+      food_item: e.food_item,
+      calories: Number(e.calories),
+    });
+    await api.post('/api/intake/update', {
+      intake_id: e.id,
+      food_item: e.food_item,
+      calories: e.calories,
+      meal_category: e.meal_category,
+      protein: data.protein,
+      carbs: data.carbs,
+      fat: data.fat,
+    });
+    await Promise.all([loadEntries(), loadRecent()]);
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    backfillingId.value = 0;
   }
 }
 
@@ -260,6 +333,7 @@ function onFoodBlur() {
 watch(
   () => form.food_item,
   (val) => {
+    aiFilled.value = false; // any change to the dish invalidates a prior AI estimate
     if (justPicked) {
       justPicked = false;
       return;
@@ -285,6 +359,13 @@ watch(
   }
 );
 
+// Editing calories after an AI fill invalidates the estimate (the split was tuned
+// to the old calorie figure), so drop the "AI estimate" note — mirrors the reset
+// in the food_item watcher above.
+watch(() => form.calories, () => {
+  aiFilled.value = false;
+});
+
 async function onSubmit() {
   if (!canSubmit.value || saving.value) return;
   error.value = '';
@@ -302,6 +383,7 @@ async function onSubmit() {
     form.fat = '';
     clearPhoto(); // clears the AI photo attached to the form
     showMacros.value = false;
+    aiFilled.value = false;
     suggestions.value = [];
     showSuggest.value = false;
     await Promise.all([loadRecent(), loadEntries()]);
@@ -632,6 +714,20 @@ onBeforeUnmount(() => {
         </span>
         <i class="mt-chevron fa-solid" :class="showMacros ? 'fa-chevron-up' : 'fa-chevron-down'" />
       </button>
+      <!-- AI fill: estimate P/C/F from the food name + calories already typed, so the
+           user doesn't have to know the macro split. Needs both fields, like logging. -->
+      <button
+        type="button"
+        class="ai-macro-btn"
+        :disabled="!canSubmit || aiFilling"
+        @click="fillMacrosWithAi"
+      >
+        <i class="fa-solid" :class="aiFilling ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'" />
+        {{ aiFilling ? $t('intake.ai_fill_loading') : $t('intake.ai_fill_macros') }}
+      </button>
+      <p v-if="aiFilled" class="ai-macro-note muted">
+        <i class="fa-solid fa-circle-info" /> {{ $t('intake.ai_fill_estimate_note') }}
+      </p>
       <MacroInputs
         v-if="showMacros"
         v-model:protein="form.protein"
@@ -678,6 +774,16 @@ onBeforeUnmount(() => {
               </div>
             </button>
             <div class="entry-actions">
+              <button
+                v-if="!entryHasMacros(e)"
+                type="button"
+                class="icon-btn"
+                :disabled="backfillingId !== 0"
+                @click="backfillMacros(e)"
+                :aria-label="$t('intake.ai_fill_macros')"
+              >
+                <i class="fa-solid" :class="backfillingId === e.id ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'" />
+              </button>
               <button type="button" class="icon-btn" @click="relog(e)" :aria-label="$t('intake.row.relog_title')"><i class="fa-solid fa-rotate-right" /></button>
               <button type="button" class="icon-btn" @click="startEdit(e)" :aria-label="$t('intake.row.edit_title')"><i class="fa-solid fa-pen" /></button>
               <button type="button" class="icon-btn danger" @click="removeEntry(e)" :aria-label="$t('intake.row.delete_title')"><i class="fa-solid fa-trash" /></button>
@@ -907,6 +1013,29 @@ label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px
 .mt-label { flex: none; }
 .mt-chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .mt-chevron { flex: none; margin-left: auto; font-size: 12px; }
+
+/* AI macro fill — estimates the optional macros from the name + calories. Sits
+   between the tray toggle and the inputs; a quiet accent action, not a primary
+   button (logging stays the primary action). */
+.ai-macro-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px 12px;
+  background: var(--inset);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.ai-macro-btn:hover:not(:disabled) { border-color: var(--accent); }
+.ai-macro-btn:disabled { opacity: 0.5; cursor: not-allowed; color: var(--muted); }
+.ai-macro-note { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; }
 
 /* Meal segmented selector */
 .meal-seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 14px; }
