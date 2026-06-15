@@ -3,6 +3,7 @@
 // the user_plan_preferences upsert.
 import { query } from '../db.js';
 import { macroGoalsFromCalories } from './intake.js';
+import { addDays, weekdayLabel } from './dates.js';
 
 export const ACTIVITY_FACTORS = {
   sedentary: 1.2,
@@ -90,4 +91,115 @@ export async function savePreferences(userId, prefs) {
        target_weight = VALUES(target_weight)`,
     [userId, goalMode, weeklyRate, activityLevel, targetWeight]
   );
+}
+
+// ---- Goal Planner page helpers (the rest of goal_plan.php + dashboard-plan.php's
+// inline logic that onboarding didn't need: read prefs, 7-day intake, ETA, notes) ----
+
+// Mirrors plan_load_preferences(). Null when the user has no saved plan row yet.
+export async function loadPreferences(userId) {
+  const rows = await query(
+    'SELECT goal_mode, weekly_rate, activity_level, target_weight FROM user_plan_preferences WHERE user_id = ?',
+    [userId]
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    goal_mode: row.goal_mode,
+    weekly_rate: Number(row.weekly_rate),
+    activity_level: row.activity_level,
+    target_weight: row.target_weight !== null ? Number(row.target_weight) : null,
+  };
+}
+
+// 7-day intake summary (ports plan_recent_intake_summary). Day buckets are the
+// user's LOCAL day via the same `date_intake + INTERVAL ? MINUTE` shift the rest of
+// the app uses (req.tzShift, 0 for VN). Averages are over LOGGED days only.
+export async function recentIntakeSummary(userId, endDate, shift = 0, days = 7) {
+  const daily = [];
+  let loggedDays = 0;
+  let totalCalories = 0;
+  let totalProtein = 0;
+  let totalCarbs = 0;
+  let totalFat = 0;
+
+  for (let i = days - 1; i >= 0; i--) {
+    const date = addDays(endDate, -i);
+    const [row] = await query(
+      `SELECT COALESCE(SUM(calories),0) AS calories, COALESCE(SUM(protein),0) AS protein,
+              COALESCE(SUM(carbs),0) AS carbs, COALESCE(SUM(fat),0) AS fat
+         FROM intakeLog WHERE user_id = ? AND DATE(date_intake + INTERVAL ? MINUTE) = ?`,
+      [userId, shift, date]
+    );
+    const calories = Number(row.calories);
+    const protein = Number(row.protein);
+    const carbs = Number(row.carbs);
+    const fat = Number(row.fat);
+    if (calories > 0) {
+      loggedDays++;
+      totalCalories += calories;
+      totalProtein += protein;
+      totalCarbs += carbs;
+      totalFat += fat;
+    }
+    daily.push({
+      date,
+      label: weekdayLabel(date),
+      calories,
+      protein: Math.round(protein * 10) / 10,
+      carbs: Math.round(carbs * 10) / 10,
+      fat: Math.round(fat * 10) / 10,
+    });
+  }
+
+  const avg = (sum) => (loggedDays > 0 ? Math.round((sum / loggedDays) * 10) / 10 : null);
+  return {
+    daily,
+    logged_days: loggedDays,
+    average_calories: loggedDays > 0 ? Math.round(totalCalories / loggedDays) : null,
+    average_protein: avg(totalProtein),
+    average_carbs: avg(totalCarbs),
+    average_fat: avg(totalFat),
+  };
+}
+
+// Ports plan_target_eta(). Returns null | { valid:false, code } | { valid:true,
+// weeks, eta_date }. Pure weight math (kgChange / kg-per-week); the client formats
+// eta_date with locale. todayDate is the user's local 'YYYY-MM-DD'.
+export function targetEta(currentWeight, targetWeight, mode, weeklyRate, todayDate) {
+  if (currentWeight == null || targetWeight == null || weeklyRate <= 0 || mode === 'maintain') return null;
+  if (mode === 'lose' && targetWeight >= currentWeight) return { valid: false, code: 'lose_dir' };
+  if (mode === 'gain' && targetWeight <= currentWeight) return { valid: false, code: 'gain_dir' };
+  const kgChange = Math.abs(targetWeight - currentWeight);
+  if (kgChange <= 0) return null;
+  const weeks = kgChange / weeklyRate;
+  const days = Math.ceil(weeks * 7);
+  return { valid: true, weeks: Math.round(weeks * 10) / 10, eta_date: addDays(todayDate, days) };
+}
+
+// Ports the planNotes chain in dashboard-plan.php. Returns [{ code, params? }] for
+// the client to render via i18n (keeps copy on the client). Order matches PHP.
+export function buildPlanNotes({ rawGoal, recommendedGoal, averageCalories, goalMode, weeklyRate, currentGoal, eta }) {
+  const notes = [];
+  if (rawGoal !== recommendedGoal) notes.push({ code: 'clamped' });
+
+  if (averageCalories == null) {
+    notes.push({ code: 'need_logs' });
+  } else {
+    const gap = averageCalories - recommendedGoal;
+    if (Math.abs(gap) <= 100) notes.push({ code: 'close' });
+    else if (gap > 0) notes.push({ code: 'above', params: { n: Math.abs(gap) } });
+    else notes.push({ code: 'below', params: { n: Math.abs(gap) } });
+  }
+
+  if (goalMode === 'lose' && weeklyRate >= 0.75) notes.push({ code: 'aggressive_lose' });
+  if (goalMode === 'gain' && weeklyRate >= 0.75) notes.push({ code: 'aggressive_gain' });
+
+  if (currentGoal != null && Math.abs(currentGoal - recommendedGoal) >= 150) {
+    const delta = Math.abs(recommendedGoal - currentGoal);
+    notes.push({ code: recommendedGoal > currentGoal ? 'delta_higher' : 'delta_lower', params: { n: delta } });
+  }
+
+  if (eta && !eta.valid) notes.push({ code: eta.code === 'gain_dir' ? 'eta_gain_dir' : 'eta_lose_dir' });
+  return notes;
 }

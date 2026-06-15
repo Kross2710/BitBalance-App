@@ -8,8 +8,9 @@
 import { ref } from 'vue';
 import AiCoachPanel from '../components/AiCoachPanel.vue';
 import MyTrainerPanel from '../components/MyTrainerPanel.vue';
+import PlanPanel from '../components/PlanPanel.vue';
 
-const tab = ref('ai'); // 'ai' | 'trainer'
+const tab = ref('ai'); // 'ai' | 'trainer' | 'plan'
 </script>
 
 <template>
@@ -21,11 +22,15 @@ const tab = ref('ai'); // 'ai' | 'trainer'
       <button class="tab" :class="{ on: tab === 'trainer' }" role="tab" :aria-selected="tab === 'trainer'" @click="tab = 'trainer'">
         <i class="fa-solid fa-user-tie" /> {{ $t('coach.tab.trainer') }}
       </button>
+      <button class="tab" :class="{ on: tab === 'plan' }" role="tab" :aria-selected="tab === 'plan'" @click="tab = 'plan'">
+        <i class="fa-solid fa-route" /> {{ $t('coach.tab.plan') }}
+      </button>
     </div>
 
     <div class="hub-panel">
       <AiCoachPanel v-show="tab === 'ai'" />
       <MyTrainerPanel v-show="tab === 'trainer'" />
+      <PlanPanel v-show="tab === 'plan'" />
     </div>
   </div>
 </template>
