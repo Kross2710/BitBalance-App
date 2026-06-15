@@ -1,13 +1,17 @@
 <script setup>
 // AI Coach chat — conversation list + thread + composer. Assistant replies may
 // carry food-log suggestion cards; tapping "Add to Log" posts to the intake API
-// (the model never logs anything itself). Text-only (no image upload yet).
+// (the model never logs anything itself). An optional photo can ride a turn — it
+// is persisted on the user message (shows in history) and sent inline to the
+// vision model for that turn (mirrors the Intake AI photo flow).
 //
 // Conversation switching adapts to width: a persistent sidebar on desktop, and
 // a bottom sheet (opened from the thread header) on mobile — no more horizontal
 // strip eating vertical space.
-import { ref, reactive, computed, nextTick, onMounted } from 'vue';
-import { api } from '../lib/api.js';
+import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { api, browserTz } from '../lib/api.js';
+import { reqStart, reqDone } from '../lib/loadingBar.js';
+import { compressImage } from '../lib/image.js';
 import { t } from '../i18n/index.js';
 import ConversationList from './ConversationList.vue';
 import BottomSheet from './BottomSheet.vue';
@@ -24,6 +28,13 @@ const added = reactive({}); // key `${msgId}:${idx}` -> 'done' | 'busy' | 'error
 const threadEl = ref(null);
 const sheetOpen = ref(false); // mobile conversation sheet
 
+// Optional photo attached to the next turn. activeImage is the compressed File
+// we upload; activeImagePreview is an object URL for the composer chip and the
+// optimistic user bubble.
+const photoInput = ref(null);
+const activeImage = ref(null);
+const activeImagePreview = ref('');
+
 const limitReached = computed(() => usage.limit != null && usage.used != null && usage.used >= usage.limit);
 
 // Title shown in the mobile thread header so the user knows which chat they're in.
@@ -38,6 +49,29 @@ function scrollToBottom() {
     if (threadEl.value) threadEl.value.scrollTop = threadEl.value.scrollHeight;
   });
 }
+
+function clearImage() {
+  if (activeImagePreview.value) URL.revokeObjectURL(activeImagePreview.value);
+  activeImagePreview.value = '';
+  activeImage.value = null;
+}
+
+async function onPickImage(e) {
+  const file = e.target.files?.[0];
+  e.target.value = ''; // allow re-picking the same file
+  if (!file) return;
+  error.value = '';
+  try {
+    const compressed = await compressImage(file, { filename: 'coach.jpg' });
+    clearImage();
+    activeImage.value = compressed;
+    activeImagePreview.value = URL.createObjectURL(compressed);
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+onBeforeUnmount(clearImage);
 
 async function loadConversations() {
   try {
@@ -82,23 +116,56 @@ function newChatFromSheet() {
 
 async function send() {
   const text = input.value.trim();
-  if (text === '' || sending.value) return;
+  if ((text === '' && !activeImage.value) || sending.value) return;
   error.value = '';
   sending.value = true;
 
-  // Optimistic user bubble.
-  const optimistic = { id: `tmp-${Date.now()}`, role: 'user', content: text, food_log_suggestions: [] };
+  // Detach the pending photo onto this turn so the composer is free again.
+  const imageFile = activeImage.value;
+  const previewUrl = activeImagePreview.value;
+  activeImage.value = null;
+  activeImagePreview.value = '';
+
+  // Optimistic user bubble (photo shown via the local preview URL until the
+  // server returns the persisted image_path).
+  const optimistic = { id: `tmp-${Date.now()}`, role: 'user', content: text, image_path: imageFile ? previewUrl : null, food_log_suggestions: [] };
   messages.value.push(optimistic);
   input.value = '';
   scrollToBottom();
 
   try {
-    const data = await api.post('/api/ai-coach/send', {
-      message: text,
-      conversation_id: activeId.value,
-      client_now: new Date().toISOString(),
-      client_tz_offset: new Date().getTimezoneOffset(),
-    });
+    let data;
+    if (imageFile) {
+      // Multipart can't go through the JSON api helper; post it directly and
+      // drive the global loading bar by hand (the helper normally does this).
+      const fd = new FormData();
+      if (text) fd.append('message', text);
+      fd.append('conversation_id', String(activeId.value));
+      fd.append('client_now', new Date().toISOString());
+      fd.append('client_tz_offset', String(new Date().getTimezoneOffset()));
+      fd.append('image', imageFile);
+      reqStart();
+      try {
+        const res = await fetch('/api/ai-coach/send', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-Timezone': browserTz() },
+          body: fd,
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.message || t('coach.chat.failed'));
+        data = json.data;
+      } finally {
+        reqDone();
+      }
+    } else {
+      data = await api.post('/api/ai-coach/send', {
+        message: text,
+        conversation_id: activeId.value,
+        client_now: new Date().toISOString(),
+        client_tz_offset: new Date().getTimezoneOffset(),
+      });
+    }
 
     // Replace optimistic bubble with the real persisted pair.
     const i = messages.value.indexOf(optimistic);
@@ -113,11 +180,16 @@ async function send() {
     }
     await loadConversations();
     scrollToBottom();
+    if (previewUrl) URL.revokeObjectURL(previewUrl); // server thumbnail now drives the bubble
   } catch (e) {
-    // Roll back the optimistic bubble and restore the text so it isn't lost.
+    // Roll back the optimistic bubble and restore text + photo so nothing is lost.
     const i = messages.value.indexOf(optimistic);
     if (i !== -1) messages.value.splice(i, 1);
     input.value = text;
+    if (imageFile) {
+      activeImage.value = imageFile;
+      activeImagePreview.value = previewUrl;
+    }
     error.value = e.message;
   } finally {
     sending.value = false;
@@ -207,7 +279,8 @@ onMounted(loadConversations);
         </div>
 
         <div v-for="m in messages" :key="m.id" class="msg" :class="m.role">
-          <div class="bubble" v-html="renderContent(m.content)" />
+          <img v-if="m.image_path" :src="m.image_path" class="msg-thumb" :alt="$t('coach.chat.photo_alt')" />
+          <div v-if="m.content" class="bubble" v-html="renderContent(m.content)" />
           <!-- Food-log suggestion cards -->
           <div v-if="m.food_log_suggestions && m.food_log_suggestions.length" class="suggestions">
             <div v-for="(item, idx) in m.food_log_suggestions" :key="idx" class="food-card">
@@ -237,7 +310,22 @@ onMounted(loadConversations);
       <form class="composer" @submit.prevent="send">
         <p v-if="error" class="error">{{ error }}</p>
         <p v-if="limitReached" class="muted center">{{ $t('coach.chat.limit_reached', { limit: usage.limit }) }}</p>
+        <div v-if="activeImagePreview" class="attach-chip">
+          <img :src="activeImagePreview" :alt="$t('coach.chat.photo_alt')" />
+          <button type="button" class="attach-x" @click="clearImage" :aria-label="$t('coach.chat.remove_photo')">
+            <i class="fa-solid fa-xmark" />
+          </button>
+        </div>
         <div class="row">
+          <button
+            type="button"
+            class="tool"
+            :disabled="sending || limitReached"
+            :aria-label="$t('coach.chat.attach_photo')"
+            @click="photoInput?.click()"
+          >
+            <i class="fa-solid fa-camera" />
+          </button>
           <textarea
             v-model="input"
             rows="1"
@@ -245,10 +333,11 @@ onMounted(loadConversations);
             :disabled="sending || limitReached"
             @keydown.enter.exact.prevent="send"
           />
-          <button type="submit" :disabled="sending || limitReached || !input.trim()">
+          <button type="submit" :disabled="sending || limitReached || (!input.trim() && !activeImage)">
             <i class="fa-solid fa-paper-plane" />
           </button>
         </div>
+        <input ref="photoInput" type="file" accept="image/*" style="display: none" @change="onPickImage" />
         <p v-if="usage.used != null" class="usage muted">{{ $t('coach.chat.usage', { used: usage.used, limit: usage.limit }) }}</p>
       </form>
     </section>
@@ -357,6 +446,7 @@ onMounted(loadConversations);
 .msg.user .bubble { background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 4px; }
 .msg.assistant .bubble { background: var(--inset); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 .bubble :deep(.bullet) { display: list-item; margin-left: 18px; }
+.msg-thumb { width: 140px; max-width: 70%; border-radius: 12px; object-fit: cover; }
 
 /* ---- Suggestion cards ---- */
 .suggestions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; width: 100%; }
@@ -389,6 +479,22 @@ onMounted(loadConversations);
   font-family: inherit;
 }
 .composer .row button { flex: none; padding: 10px 14px; }
+/* Photo attach button + pending-photo chip (mirrors the Intake AI chat). */
+.composer .tool {
+  flex: none; width: 44px; height: 44px; min-height: 0; padding: 0;
+  display: grid; place-items: center;
+  background: var(--inset); color: var(--text); border: 1px solid var(--border);
+}
+.composer .tool:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.attach-chip { position: relative; width: 52px; height: 52px; margin-bottom: 8px; }
+.attach-chip img { width: 100%; height: 100%; border-radius: 10px; object-fit: cover; }
+.attach-x {
+  position: absolute; top: -6px; right: -6px;
+  width: 22px; height: 22px; min-height: 0; padding: 0;
+  display: grid; place-items: center;
+  border-radius: 50%; background: var(--surface-2); color: var(--text);
+  font-size: 11px;
+}
 .usage { margin: 8px 0 0; text-align: right; }
 .error { margin: 0 0 8px; }
 

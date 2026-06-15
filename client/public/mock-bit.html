@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BitBalance — pixel identity mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+<style>
+  /* --- tokens copied from client/src/styles.css (dark) --- */
+  :root{
+    --bg:#0f1115; --card:#1a1d24; --surface-2:#2a2e37; --inset:#12151b;
+    --accent:#4ade80; --on-accent:#04210f; --text:#e8eaed; --muted:#9aa0a6;
+    --border:#2a2e37; --field-border:#3a414e; --streak:#fb923c;
+    --gold:#ffc857; --violet:#a78bfa; --blue:#60a5fa;
+    --pixel:'Press Start 2P', ui-monospace, monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    /* faint pixel-grid texture — flat, no gradient, just a calm scanline lattice */
+    background-image:
+      linear-gradient(rgba(255,255,255,.015) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.015) 1px,transparent 1px);
+    background-size:8px 8px;
+  }
+  .wrap{max-width:420px;margin:0 auto;padding:14px 16px 40px;display:flex;flex-direction:column;gap:14px}
+  .page-head h1{margin:4px 0 0;font-size:20px;font-weight:800}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px}
+  .muted{color:var(--muted)}
+  svg.spr{image-rendering:pixelated;shape-rendering:crispEdges;display:block}
+
+  /* pixel display type — used ONLY for game-moment labels, body stays readable */
+  .px{font-family:var(--pixel);line-height:1.5;letter-spacing:.02em}
+
+  /* --- level-up hero --- */
+  .levelup{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;
+    gap:12px;padding:22px 16px 20px;border-color:var(--accent)}
+  .levelup .kicker{font-family:var(--pixel);font-size:9px;color:var(--accent);letter-spacing:.12em}
+  .levelup .big{font-family:var(--pixel);font-size:17px;color:var(--text);text-align:center}
+  .levelup .big b{color:var(--accent)}
+  .badge-wrap{position:relative;display:grid;place-items:center;margin:2px 0}
+  /* sparse pixel "confetti" — static, decorative, drawn as tiny squares */
+  .confetti i{position:absolute;width:6px;height:6px}
+  .reward-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .reward{display:flex;align-items:center;gap:8px;background:var(--inset);border:1px solid var(--border);
+    border-radius:10px;padding:7px 11px;font-size:12px;font-weight:700}
+  .reward b{font-family:var(--pixel);font-size:10px;color:var(--accent)}
+
+  /* --- xp bar: segmented pixel cells --- */
+  .xp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .lv-chip{display:flex;align-items:center;gap:8px}
+  .lv-chip .n{font-family:var(--pixel);font-size:13px;color:var(--accent)}
+  .lv-chip small{font-family:var(--pixel);font-size:8px;color:var(--muted)}
+  .xp-amt{font-size:12px}
+  .xp-amt b{color:var(--text);font-weight:800}
+  .pxbar{display:flex;gap:3px;height:16px}
+  .pxbar i{flex:1;border-radius:2px;background:var(--inset);box-shadow:inset 0 0 0 1px var(--border)}
+  .pxbar i.on{background:var(--accent);box-shadow:none}
+  .pxbar i.tip{background:var(--accent);opacity:.45}
+
+  /* --- stat tiles --- */
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:13px 8px;text-align:center}
+  .tile .val{font-family:var(--pixel);font-size:12px}
+  .tile .lab{font-size:11px}
+
+  /* --- streak strip --- */
+  .streak{display:flex;align-items:center;gap:12px}
+  .streak .meta{display:flex;flex-direction:column;gap:2px}
+  .streak .n{font-family:var(--pixel);font-size:15px;color:var(--streak)}
+  .streak .lab{font-size:12px}
+  .week{display:flex;gap:5px;margin-left:auto}
+  .week i{width:14px;height:14px;border-radius:3px;background:var(--inset);box-shadow:inset 0 0 0 1px var(--border)}
+  .week i.hit{background:var(--streak);box-shadow:none}
+
+  /* --- section + badge grid --- */
+  .sec-title{margin:6px 2px 0;font-size:13px;font-weight:800;font-family:var(--pixel);font-size:10px;letter-spacing:.06em}
+  .badges{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .badge{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 6px;
+    background:var(--card);border:1px solid var(--border);border-radius:12px}
+  .badge.locked{opacity:.4}
+  .badge .nm{font-size:11px;font-weight:700;text-align:center}
+  .badge .lv{font-family:var(--pixel);font-size:7px;color:var(--muted)}
+
+  /* empty-state with mascot */
+  .empty{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:22px 16px}
+  .empty .t{font-weight:800;font-size:14px}
+  .empty .h{font-size:12px;max-width:240px;line-height:1.5}
+  .note{font-size:11px;color:var(--muted);text-align:center;margin-top:4px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="page-head"><h1>Progress</h1></div>
+
+  <!-- LEVEL-UP MOMENT -->
+  <section class="card levelup">
+    <div class="confetti" id="confetti"></div>
+    <span class="kicker">NEW LEVEL REACHED</span>
+    <div class="badge-wrap" id="medalHost"></div>
+    <div class="big">LEVEL <b>7</b></div>
+    <div class="reward-row">
+      <span class="reward"><span id="coinHost"></span> <b>+120</b> XP</span>
+      <span class="reward"><span id="gemHost"></span> New badge</span>
+    </div>
+  </section>
+
+  <!-- XP BAR -->
+  <section class="card">
+    <div class="xp-head">
+      <span class="lv-chip"><span id="lvHost"></span><span class="n">LV 7</span><small>→ 8</small></span>
+      <span class="xp-amt"><b>340</b> / 500 XP</span>
+    </div>
+    <div class="pxbar" id="pxbar"></div>
+  </section>
+
+  <!-- STREAK -->
+  <section class="card streak">
+    <span id="flameHost"></span>
+    <span class="meta"><span class="n">14</span><span class="lab muted">day streak</span></span>
+    <span class="week" id="week"></span>
+  </section>
+
+  <!-- STAT TILES -->
+  <section class="tiles">
+    <div class="card tile"><span id="t1"></span><span class="val">12,480</span><span class="lab muted">Total XP</span></div>
+    <div class="card tile"><span id="t2"></span><span class="val">9/24</span><span class="lab muted">Badges</span></div>
+    <div class="card tile"><span id="t3"></span><span class="val">231</span><span class="lab muted">Foods</span></div>
+  </section>
+
+  <!-- BADGE GRID -->
+  <h2 class="sec-title">Badges</h2>
+  <section class="badges" id="badges"></section>
+
+  <!-- EMPTY STATE with mascot -->
+  <h2 class="sec-title">Records</h2>
+  <section class="card empty">
+    <span id="mascotHost"></span>
+    <span class="t">No records yet</span>
+    <span class="h muted">Log a few meals and Bit will start tracking your personal bests.</span>
+  </section>
+
+  <p class="note">Pixel / "Bit" identity mock — same dark, flat tokens + accent #4ade80, no emoji,
+    no gradients. The retro layer carries the gamification; data stays the hero.</p>
+</div>
+
+<script>
+/* Build a crisp pixel sprite from a char-map. '.' = transparent.
+   Each other char maps to a palette colour. Rendered as <rect> cells. */
+function sprite(rows, palette, px){
+  const h=rows.length, w=Math.max(...rows.map(r=>r.length));
+  const S=px||7;
+  let cells='';
+  for(let y=0;y<h;y++){
+    for(let x=0;x<rows[y].length;x++){
+      const c=rows[y][x];
+      if(c==='.'||c===' ')continue;
+      const col=palette[c]; if(!col)continue;
+      cells+=`<rect x="${x}" y="${y}" width="1" height="1" fill="${col}"/>`;
+    }
+  }
+  return `<svg class="spr" width="${w*S}" height="${h*S}" viewBox="0 0 ${w} ${h}">${cells}</svg>`;
+}
+const A='#4ade80', D='#04210f', W='#e8eaed', O='#fb923c', Y='#ffd166', G='#ffc857', M='#2a2e37', V='#a78bfa', B='#60a5fa';
+
+/* Bit mascot — a friendly pixel buddy echoing the "B" logo */
+const bit = sprite([
+  '..GGGGGGGG..',
+  '.GddddddddG.',
+  'GddddddddddG',
+  'GddWWddWWddG',
+  'GddWWddWWddG',
+  'GddddddddddG',
+  'GddddddddddG',
+  'GdddGGGGdddG',
+  'GdddddddddG.',
+  '.GddddddddG.',
+  '..GG.GG.GG..',
+  '..GG....GG..',
+], {G:A,d:D,W:W}, 8);
+
+/* Level medal — pixel shield + star */
+const medal = sprite([
+  '...GGGGGG...',
+  '..GddddddG..',
+  '.GddGGGGddG.',
+  'GddGGGGGGddG',
+  'GdGGGyGGGGdG',
+  'GdGGyyyGGGdG',
+  'GdGyyyyyGGdG',
+  'GdGGyyyGGGdG',
+  'GddGGyGGGddG',
+  '.GddGGGGddG.',
+  '..GddddddG..',
+  '...G.GG.G...',
+  '...G.GG.G...',
+  '....GGGG....',
+], {G:A,d:D,y:G}, 9);
+
+/* Flame for streak */
+const flame = sprite([
+  '....oo....',
+  '...oooo...',
+  '..ooooyo..',
+  '..oooyyo..',
+  '.oooyyyoo.',
+  '.ooyyyyoo.',
+  'oooyyYyyoo',
+  'ooyyYYYyyo',
+  'ooyyYYYyyo',
+  '.ooyyyyoo.',
+  '..oooooo..',
+  '...oooo...',
+], {o:O,y:Y,Y:W}, 5);
+
+/* Tiny coin + gem for reward chips */
+const coin = sprite([
+  '.GGGG.',
+  'GyyyyG',
+  'GyGGyG',
+  'GyGGyG',
+  'GyyyyG',
+  '.GGGG.',
+], {G:A,y:G}, 4);
+const gem = sprite([
+  '.vvvv.',
+  'vWvvWv',
+  'vvvvvv',
+  '.vvvv.',
+  '..vv..',
+  '...v..',
+], {v:V,W:W}, 4);
+
+/* Badge sprites */
+const trophy = sprite([
+  'G.GGGG.G',
+  'GGyyyyGG',
+  'GGyyyyGG',
+  '.GyyyyG.',
+  '..GyyG..',
+  '...GG...',
+  '..GGGG..',
+  '.GGGGGG.',
+], {G:A,y:G}, 6);
+const apple = sprite([
+  '...GG...',
+  '..GG....',
+  '.rrrr rr.',
+  'rrrrrrrr',
+  'rrrrrrrr',
+  'rrrrrrrr',
+  '.rrrrrr.',
+  '..r..r..',
+], {G:A,r:'#f87171'}, 6);
+const fire2 = sprite([
+  '..oo..',
+  '.oooy.',
+  'ooyyyo',
+  'ooyYyo',
+  'ooyyyo',
+  '.oooo.',
+], {o:O,y:Y,Y:W}, 6);
+const star = sprite([
+  '...vv...',
+  '...vv...',
+  'vvvvvvvv',
+  '.vvvvvv.',
+  '..vvvv..',
+  '.vv..vv.',
+  'vv....vv',
+], {v:V}, 6);
+const dumbbell = sprite([
+  'b..bb..b',
+  'bb.bb.bb',
+  'bbbbbbbb',
+  'bbbbbbbb',
+  'bb.bb.bb',
+  'b..bb..b',
+], {b:B}, 6);
+const lock = sprite([
+  '..MMMM..',
+  '.M....M.',
+  '.M....M.',
+  'MMMMMMMM',
+  'MMMMMMMM',
+  'MMMMMMMM',
+  'MMMMMMMM',
+], {M:'#5b6470'}, 6);
+
+document.getElementById('medalHost').innerHTML = sprite([
+  '...GGGGGG...','..GddddddG..','.GddGGGGddG.','GddGGGGGGddG','GdGGGyGGGGdG',
+  'GdGGyyyGGGdG','GdGyyyyyGGdG','GdGGyyyGGGdG','GddGGyGGGddG','.GddGGGGddG.',
+  '..GddddddG..','...G.GG.G...','...G.GG.G...','....GGGG....',
+], {G:A,d:D,y:G}, 11);
+document.getElementById('coinHost').innerHTML = coin;
+document.getElementById('gemHost').innerHTML = gem;
+document.getElementById('lvHost').innerHTML = sprite(['GGGG','GddG','GddG','GGGG'],{G:A,d:D},5);
+document.getElementById('flameHost').innerHTML = flame;
+document.getElementById('mascotHost').innerHTML = bit;
+document.getElementById('t1').innerHTML = star;
+document.getElementById('t2').innerHTML = trophy;
+document.getElementById('t3').innerHTML = apple;
+
+/* segmented xp bar — 340/500 -> ~68% of 20 cells */
+const bar=document.getElementById('pxbar'); const cells=20, on=Math.round(cells*0.68);
+for(let i=0;i<cells;i++){const e=document.createElement('i');
+  if(i<on)e.className='on'; else if(i===on)e.className='tip'; bar.appendChild(e);}
+
+/* week streak strip */
+const week=document.getElementById('week');
+[1,1,1,1,1,1,0].forEach(h=>{const e=document.createElement('i'); if(h)e.className='hit'; week.appendChild(e);});
+
+/* badges */
+const BADGES=[
+  ['7-day streak',fire2,'Lv 3',false],['First trophy',trophy,'Lv 2',false],['100 foods',apple,'Lv 4',false],
+  ['Night owl',star,'Lv 1',false],['Gym rat',dumbbell,'Lv 2',false],['Locked',lock,'—',true],
+];
+const bg=document.getElementById('badges');
+BADGES.forEach(([nm,sp,lv,locked])=>{
+  const d=document.createElement('div'); d.className='badge'+(locked?' locked':'');
+  d.innerHTML=sp+`<span class="nm">${nm}</span><span class="lv">${lv}</span>`;
+  bg.appendChild(d);
+});
+
+/* sparse static pixel confetti around the medal */
+const cf=document.getElementById('confetti');
+const spots=[[18,16,A],[60,10,G],[88,30,V],[20,60,V],[84,64,A],[50,8,G],[14,40,B],[90,46,G]];
+spots.forEach(([l,t,c])=>{const i=document.createElement('i');
+  i.style.left=l+'%';i.style.top=t+'%';i.style.background=c;cf.appendChild(i);});
+</script>
+</body>
+</html>

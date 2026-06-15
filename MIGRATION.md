@@ -65,9 +65,9 @@ gần như port 1-1.
 | Profile – update | `api/profile/update.php` | ✅ `POST /api/profile/update` | ✅ ProfileView | Account/bio/theme/goal/physical trong 1 transaction; check trùng email/handle; đồng bộ session. Chưa port: upload ảnh + đổi ngôn ngữ + `log_attempt` (legacy update.php cũng không xử lý ảnh/ngôn ngữ) |
 | AI Coach – conversations | `api/ai-coach/conversations.php` | ✅ `GET /api/ai-coach/conversations` | ✅ CoachView | List 100 hội thoại mới nhất |
 | AI Coach – messages | `api/ai-coach/messages.php` | ✅ `GET /api/ai-coach/messages?conversation_id=` | ✅ CoachView | Trả conversation + messages, unpack food-log suggestions |
-| AI Coach – send | `api/ai-coach/send.php` | ✅ `POST /api/ai-coach/send` | ✅ CoachView | Rate limit ngày, build context, gọi LLM, tách `[[FOOD_LOG]]`, auto-title, bump usage |
+| AI Coach – send | `api/ai-coach/send.php` | ✅ `POST /api/ai-coach/send` | ✅ CoachView | Rate limit ngày, build context, gọi LLM, tách `[[FOOD_LOG]]`, auto-title, bump usage. **Ảnh tùy chọn** (multipart): lưu qua `saveIntakeImage` → `ai_message.image_path` + gửi inline cho vision model, thumbnail hiện trong lịch sử, cleanup khi xoá hội thoại |
 | AI Coach – delete | `api/ai-coach/delete.php` | ✅ `POST /api/ai-coach/delete` | ✅ CoachView | Xoá hội thoại (ai_message cascade qua FK) |
-| AI Coach – provider | `call_gemini()` | ✅ `lib/aiProvider.js` | — | Trừu tượng hoá: `AI_PROVIDER=gemini\|openrouter` chọn qua env. Chưa port: **upload ảnh/vision** (text-only v1) — xem nợ kỹ thuật |
+| AI Coach – provider | `call_gemini()` | ✅ `lib/aiProvider.js` | — | Trừu tượng hoá: `AI_PROVIDER=gemini\|openrouter` chọn qua env. Hỗ trợ ảnh inline (Gemini `inline_data` / OpenRouter `image_url`) — dùng ở cả Intake AI photo **và** AI Coach chat |
 | Meal reminders | — (mới) | ✅ `GET/POST /api/reminders` | ✅ Profile + Dashboard | Bảng `meal_reminder` (1 dòng/user: công tắc tổng + bật/giờ từng bữa). Profile có section "Meal reminders"; Dashboard hiện **nudge in-app** khi giờ bữa đã qua mà chưa log (so giờ Asia/Bangkok, bỏ qua nếu đã dismiss trong ngày — localStorage). Push nền (Service Worker/Web Push) là việc sau |
 | Social/Friends | `api/social/action.php` | ✅ `/api/social/*` | ✅ FriendsView | `poll`/`leaderboard`/`pending-count` (GET) + `search`/`send`/`accept`/`reject`/`cancel`/`unfriend` (POST). Cap 20 lời mời pending/24h; upsert lại row rejected/cancelled; weekly_xp tính từ `xp_event` 7 ngày. UI 4 tab (Friends/Pending/Ranks/Find), poll 15s khi mở tab, tab nav thứ 5 + badge lời mời đến. Chưa port: **block** + enforce `profile_visibility` (PHP cũng chưa enforce); `log_attempt` audit (đồng bộ với các route khác) |
 | **Wrapped (recap)** | `dashboard/handlers/story_data.php` | ✅ `GET /api/wrapped` (`lib/wrapped.js`) | ⚠️ `WrappedStory.vue` | 5 slide (aura/badge/streak/leaderboard/bento) + carousel + cache. **CHƯA: export ảnh PNG 1080×1920 (html2canvas) + Web Share** — phần "wow" để share còn thiếu (xem comment "Image export is P3 — not here yet"). Slide Spotify deferred (`spotify: null`) |
@@ -110,11 +110,12 @@ gần như port 1-1.
       JWT) — `middleware/auth.js` đọc `currentUserRow(req)` từ session + remember-me cookie.
 - [ ] **CSRF**: app PHP có `include/csrf.php`. SPA dùng cookie → cân nhắc
       double-submit token hoặc SameSite=strict cho các mutation.
-- [ ] **AI Coach chat vision (ảnh)**: `lib/aiProvider.js` ĐÃ hỗ trợ ảnh (Gemini
-      `inline_data` / OpenRouter `image_url`) và `/api/intake/estimate-photo` đã
-      dùng. Còn nợ: gắn ảnh vào **chat** AI Coach (`routes/aiCoach.js` `send`) như
-      PHP `send.php` — multer upload + lưu `images/ai_coach/{userId}/` + static
-      serve + cleanup ảnh khi xoá hội thoại (estimate-photo hiện không lưu ảnh).
+- [x] **AI Coach chat vision (ảnh)**: `routes/aiCoach.js` `send` nhận ảnh tùy chọn
+      (multer multipart) → lưu qua `saveIntakeImage` (`uploads/intake/`, dùng lại
+      thay vì thư mục riêng) + gắn vào user message (`ai_message.image_path`) +
+      gửi inline cho vision model (`chatCompletion({ image })`) + cleanup ảnh khi
+      xoá hội thoại. Client `AiCoachPanel.vue`: nút camera + preview + thumbnail
+      trong thread (mirror Intake AI photo).
 - [x] **Barcode iOS**: ĐÃ thêm ZXing (`@zxing/browser`, lazy-load) làm fallback
       khi không có native `BarcodeDetector` (iOS Safari). Ưu tiên native trên Android.
 - [ ] **Captcha** signup/login: thay GD image bằng thư viện Node.

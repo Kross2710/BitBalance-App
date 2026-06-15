@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BitBalance — Intake pixel mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0f1115; --card:#1a1d24; --surface-2:#2a2e37; --inset:#12151b;
+    --accent:#4ade80; --on-accent:#04210f; --text:#e8eaed; --muted:#9aa0a6;
+    --border:#2a2e37; --field-border:#3a414e; --placeholder:#7b828e; --streak:#fb923c;
+    --p:#ff6b6b; --c:#ffc857; --f:#74a7ff;
+    --m-bk:#f87171; --m-bk-bg:rgba(248,113,113,.15);
+    --m-lu:#60a5fa; --m-lu-bg:rgba(96,165,250,.15);
+    --m-di:#c084fc; --m-di-bg:rgba(192,132,252,.15);
+    --m-sn:#fb923c; --m-sn-bg:rgba(251,146,60,.15);
+    --pixel:'Press Start 2P', ui-monospace, monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    background-image:
+      linear-gradient(rgba(255,255,255,.015) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.015) 1px,transparent 1px);
+    background-size:8px 8px;}
+  .wrap{max-width:420px;margin:0 auto;padding:14px 16px 60px;display:flex;flex-direction:column;gap:14px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px}
+  .muted{color:var(--muted)}
+  svg.spr{image-rendering:pixelated;shape-rendering:crispEdges;display:block}
+  .px{font-family:var(--pixel)}
+  /* readable inputs — identity stays OUT of the typing path */
+  input{width:100%;padding:13px 13px;min-height:48px;border-radius:10px;border:1px solid var(--field-border);
+    background:var(--inset);color:var(--text);font-size:16px;font-family:inherit}
+  input::placeholder{color:var(--placeholder)}
+  input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(74,222,128,.25)}
+  label{font-family:var(--pixel);font-size:9px;color:var(--muted);display:block;margin:0 0 8px;letter-spacing:.05em}
+
+  h1.title{font-family:var(--pixel);font-size:14px;margin:6px 2px 2px}
+
+  /* calorie energy bar (compact, shared with dashboard) */
+  .cal{display:flex;flex-direction:column;gap:10px}
+  .cal-head{display:flex;align-items:baseline;justify-content:space-between}
+  .cal-head .big{font-family:var(--pixel);font-size:16px}
+  .cal-head .goal{font-size:12px;color:var(--muted)}.cal-head .goal b{color:var(--text)}
+  .energy{display:flex;gap:3px;height:18px}
+  .energy i{flex:1;background:var(--inset);box-shadow:inset 0 0 0 1px var(--border);border-radius:2px}
+  .energy i.on{box-shadow:none;background:var(--accent)}
+  .cal-left{font-size:11px;color:var(--muted)}.cal-left b{color:var(--accent);font-weight:800}
+
+  /* capture shortcuts */
+  .io{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
+  .io-chip{display:flex;align-items:center;justify-content:center;gap:9px;min-height:50px;border-radius:10px;
+    background:var(--inset);border:1px solid var(--border);color:var(--text);font-weight:700;font-size:13px}
+  .io-chip .px-l{font-family:var(--pixel);font-size:9px}
+
+  /* recent chips */
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .chip{display:inline-flex;align-items:center;gap:7px;background:var(--inset);border:1px solid var(--border);
+    border-radius:999px;padding:7px 13px;min-height:40px;font-size:13px;font-weight:600;color:var(--text)}
+
+  /* meal selector */
+  .meal-seg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .meal-pill{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:78px;
+    padding:9px 4px;background:var(--inset);border:1px solid var(--border);border-radius:12px;color:var(--muted)}
+  .meal-pill .nm{font-size:11px;font-weight:700}
+  .meal-pill .kc{font-family:var(--pixel);font-size:8px;opacity:.85}
+  .meal-pill.bk.active{border-color:var(--m-bk);background:var(--m-bk-bg);color:var(--text)}
+  .meal-pill.lu.active{border-color:var(--m-lu);background:var(--m-lu-bg);color:var(--text)}
+  .meal-pill.di.active{border-color:var(--m-di);background:var(--m-di-bg);color:var(--text)}
+  .meal-pill.sn.active{border-color:var(--m-sn);background:var(--m-sn-bg);color:var(--text)}
+
+  /* macro toggle */
+  .macro-toggle{display:flex;align-items:center;gap:10px;width:100%;padding:12px;border:1px dashed var(--border);
+    border-radius:10px;background:transparent;color:var(--muted);font-size:12px;font-weight:600;min-height:48px}
+  .macro-toggle .px-l{font-family:var(--pixel);font-size:8px}
+  .macro-toggle .chev{margin-left:auto}
+
+  /* log button — chunky pixel CTA */
+  .log-btn{width:100%;min-height:56px;border-radius:12px;background:var(--accent);color:var(--on-accent);
+    border:none;display:flex;align-items:center;justify-content:center;gap:12px;font-family:var(--pixel);font-size:13px;margin-top:4px}
+  .log-btn .xp{font-size:9px;opacity:.7}
+
+  /* today entries */
+  .entries h2{font-family:var(--pixel);font-size:11px;margin:2px 2px 12px}
+  .entry{display:flex;align-items:center;gap:11px;padding:12px 0;border-top:1px solid var(--border)}
+  .entry:first-of-type{border-top:none;padding-top:2px}
+  .thumb{flex:none;width:44px;height:44px;border-radius:9px;display:grid;place-items:center;background:var(--inset)}
+  .ebody{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+  .eline{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .enm{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ekc{flex:none;font-family:var(--pixel);font-size:11px}
+  .emeta{display:flex;align-items:center;gap:8px}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .pill.bk{background:var(--m-bk-bg);color:var(--m-bk)} .pill.lu{background:var(--m-lu-bg);color:var(--m-lu)}
+  .pill.di{background:var(--m-di-bg);color:var(--m-di)} .pill.sn{background:var(--m-sn-bg);color:var(--m-sn)}
+  .etime{font-size:11px;color:var(--muted)}
+  .eact{flex:none;display:flex;gap:6px}
+  .ibtn{width:38px;height:38px;border-radius:9px;background:var(--surface-2);display:grid;place-items:center;color:var(--text)}
+
+  /* reward toast (the core-loop payoff) */
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;
+    background:var(--card);border:1px solid var(--accent);box-shadow:0 0 0 1px var(--accent) inset, 0 10px 30px rgba(0,0,0,.5);
+    border-radius:12px;padding:12px 18px}
+  .toast .t1{font-family:var(--pixel);font-size:11px;color:var(--accent)}
+  .toast .t2{font-family:var(--pixel);font-size:9px;color:var(--muted);margin-top:4px}
+  .note{font-size:11px;color:var(--muted);text-align:center;margin-top:6px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1 class="title px">ADD ENTRY</h1>
+
+  <!-- calorie summary -->
+  <section class="card cal">
+    <div class="cal-head"><span class="big">1,420</span><span class="goal">/ <b>2,100</b> kcal</span></div>
+    <div class="energy" id="energy"></div>
+    <span class="cal-left"><b>680 kcal</b> left today</span>
+  </section>
+
+  <!-- form -->
+  <section class="card" style="display:flex;flex-direction:column;gap:14px">
+    <div class="io">
+      <button class="io-chip"><span id="icBarcode"></span><span class="px-l">SCAN</span></button>
+      <button class="io-chip"><span id="icAi"></span><span class="px-l">AI PHOTO</span></button>
+    </div>
+
+    <div>
+      <label>WHAT DID YOU EAT?</label>
+      <input placeholder="e.g. Pho Bo, banana, latte..." value="" />
+      <div class="chips">
+        <span class="chip" id="c1"></span><span class="chip" id="c2"></span><span class="chip" id="c3"></span>
+      </div>
+    </div>
+
+    <div>
+      <label>MEAL</label>
+      <div class="meal-seg" id="meals"></div>
+    </div>
+
+    <div>
+      <label>CALORIES</label>
+      <input type="number" placeholder="kcal" value="450" />
+    </div>
+
+    <button class="macro-toggle"><span class="px-l">MACROS — OPTIONAL</span><span class="chev px-l">v</span></button>
+
+    <button class="log-btn"><span id="logIc"></span> LOG ENTRY <span class="xp">+10 XP</span></button>
+  </section>
+
+  <!-- today entries -->
+  <section class="card entries">
+    <h2 class="px">TODAY</h2>
+    <div id="entries"></div>
+  </section>
+
+  <p class="note">Intake mock — identity dialled DOWN for a working form. Inputs stay clean &amp; readable;
+    pixel only on meal sprites, kcal, the LOG button + the +XP reward moment.</p>
+</div>
+
+<!-- the core-loop reward -->
+<div class="toast"><span id="toastIc"></span><span><span class="t1">LOGGED!</span><div class="t2">+10 XP &middot; streak 14</div></span></div>
+
+<script>
+function sprite(rows,palette,px){
+  const h=rows.length,w=Math.max(...rows.map(r=>r.length)),S=px||7;let c='';
+  for(let y=0;y<h;y++)for(let x=0;x<rows[y].length;x++){const ch=rows[y][x];
+    if(ch==='.'||ch===' ')continue;const col=palette[ch];if(!col)continue;
+    c+=`<rect x="${x}" y="${y}" width="1" height="1" fill="${col}"/>`;}
+  return `<svg class="spr" width="${w*S}" height="${h*S}" viewBox="0 0 ${w} ${h}">${c}</svg>`;
+}
+const A='#4ade80',D='#04210f',W='#e8eaed',G='#ffc857';
+
+const mug=sprite([
+  '.s.s....','s.s.....','rrrrrrr.','r.....rR','r.....rR','r.....r.','rrrrrrr.','.rrrrr..',
+],{s:'#5b6470',r:'#f87171',R:'#f87171'},4);
+const bowl=sprite([
+  '........','.GGGGGG.','bGGGGGGb','bbbbbbbb','.bbbbbb.','..bbbb..',
+],{G:A,b:'#60a5fa'},4);
+const plate=sprite([
+  'p.p.p..p','p.p.p..p','.ppp...p','..p....p','..p....p','..p....p','..p....p',
+],{p:'#c084fc'},4);
+const cookie=sprite([
+  '..oooo..','.oooooo.','ooddoooo','oooooddo','ododoooo','oooooodo','.oooooo.','..oooo..',
+],{o:'#fb923c',d:'#7c4a1e'},4);
+
+const barcode=sprite([
+  'A.AA.A.A','A.AA.A.A','A.AA.A.A','A.AA.A.A','A.AA.A.A','A.AA.A.A',
+],{A:A},4);
+const aiwand=sprite([
+  '...A....','.A.A.A..','..AAA...','AAAAAAA.','..AAA...','.A.A.A..','...A....',
+],{A:A},4);
+const fork=sprite([
+  'A.A.A','A.A.A','.AAA.','..A..','..A..','..A..',
+],{A:'#04210f'},5);
+const coin=sprite([
+  '.GGGG.','GyyyyG','GyGGyG','GyGGyG','GyyyyG','.GGGG.',
+],{G:A,y:G},5);
+const coinBig=sprite([
+  '.GGGG.','GyyyyG','GyGGyG','GyGGyG','GyyyyG','.GGGG.',
+],{G:A,y:G},6);
+
+document.getElementById('icBarcode').innerHTML=barcode;
+document.getElementById('icAi').innerHTML=aiwand;
+document.getElementById('logIc').innerHTML=fork;
+document.getElementById('toastIc').innerHTML=coinBig;
+
+// recent chips with tiny food sprites
+[['c1',bowl,'Pho Bo'],['c2',mug,'Latte'],['c3',cookie,'Protein bar']].forEach(([id,sp,nm])=>{
+  document.getElementById(id).innerHTML=sp+'<span>'+nm+'</span>';});
+
+// meal selector
+const MEALS=[['Breakfast',mug,'420','bk',false],['Lunch',bowl,'560','lu',true],['Dinner',plate,'—','di',false],['Snack',cookie,'130','sn',false]];
+const ms=document.getElementById('meals');
+MEALS.forEach(([nm,sp,kc,cls,act])=>{const d=document.createElement('button');
+  d.className='meal-pill '+cls+(act?' active':'');
+  d.innerHTML=`${sp}<span class="nm">${nm}</span><span class="kc">${kc}</span>`;ms.appendChild(d);});
+
+// energy bar
+const en=document.getElementById('energy');const cells=24,on=Math.round(24*1420/2100);
+for(let i=0;i<cells;i++){const e=document.createElement('i');if(i<on)e.className='on';en.appendChild(e);}
+
+// today entries
+const ENT=[
+  ['Pho Bo',bowl,'lu','Lunch','12:30 PM','450'],
+  ['Greek yogurt',mug,'bk','Breakfast','8:05 AM','180'],
+  ['Protein bar',cookie,'sn','Snack','3:40 PM','210'],
+];
+const el=document.getElementById('entries');
+ENT.forEach(([nm,sp,cls,lab,tm,kc])=>{const d=document.createElement('div');d.className='entry';
+  d.innerHTML=`<span class="thumb">${sp}</span>
+    <span class="ebody"><span class="eline"><span class="enm">${nm}</span><span class="ekc">${kc}</span></span>
+    <span class="emeta"><span class="pill ${cls}">${lab}</span><span class="etime">${tm}</span></span></span>
+    <span class="eact"><span class="ibtn">${coin}</span></span>`;
+  el.appendChild(d);});
+</script>
+</body>
+</html>
