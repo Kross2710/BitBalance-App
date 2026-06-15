@@ -137,8 +137,14 @@ export async function dailySummary(userId, date = null, shift = 0) {
     percentage = Math.min(100, Math.max(0, Math.round((totalCalories / goal) * 100 * 100) / 100));
   }
 
+  // Same scan also yields macro "coverage": how many of the day's entries carry
+  // any macro vs the total. The card uses this to nudge filling the missing ones
+  // (macros are optional at log time), so it must be the count of entries, not the
+  // macro sums above.
   const [macroRow] = await query(
-    `SELECT COALESCE(SUM(protein),0) AS protein, COALESCE(SUM(carbs),0) AS carbs, COALESCE(SUM(fat),0) AS fat
+    `SELECT COALESCE(SUM(protein),0) AS protein, COALESCE(SUM(carbs),0) AS carbs, COALESCE(SUM(fat),0) AS fat,
+            COUNT(*) AS entry_count,
+            COALESCE(SUM(CASE WHEN protein > 0 OR carbs > 0 OR fat > 0 THEN 1 ELSE 0 END), 0) AS macro_count
        FROM intakeLog WHERE user_id = ? AND ${dateCond}`,
     scopeParams
   );
@@ -153,6 +159,10 @@ export async function dailySummary(userId, date = null, shift = 0) {
       fat: Number(macroRow.fat),
     },
     macro_goals: resolveMacrosFromGoalRow(goalRow),
+    macro_coverage: {
+      logged: Number(macroRow.macro_count),
+      total: Number(macroRow.entry_count),
+    },
   };
 }
 
