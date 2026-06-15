@@ -165,6 +165,8 @@ const editForm = reactive({ intake_id: 0, food_item: '', calories: '', meal_cate
 // open flag; lightbox holds the enlarged photo src.
 const detailEntry = ref(null);
 const lightbox = ref('');
+// id of the entry whose macros are being AI-filled (per-row spinner); 0 = none.
+const backfillingId = ref(0);
 
 async function loadEntries() {
   try {
@@ -222,6 +224,43 @@ async function removeEntry(e) {
     showUndo(res.deleted_row);
   } catch (err) {
     error.value = err.message;
+  }
+}
+
+// A logged entry counts as "has macros" if any of P/C/F is set. Entries logged
+// with calories only (macros optional) show the AI back-fill action below.
+function entryHasMacros(e) {
+  return Number(e.protein) > 0 || Number(e.carbs) > 0 || Number(e.fat) > 0;
+}
+
+// Back-fill macros on an already-logged entry that has none: estimate from its
+// food name + calories, then persist via the normal update route. Macros stay
+// optional, so a quota/parse failure just surfaces a message and leaves the entry
+// untouched. One at a time (guarded) to respect the shared AI budget.
+async function backfillMacros(e) {
+  if (backfillingId.value !== 0) return;
+  error.value = '';
+  clearMessages();
+  backfillingId.value = e.id;
+  try {
+    const data = await api.post('/api/intake/estimate-macros', {
+      food_item: e.food_item,
+      calories: Number(e.calories),
+    });
+    await api.post('/api/intake/update', {
+      intake_id: e.id,
+      food_item: e.food_item,
+      calories: e.calories,
+      meal_category: e.meal_category,
+      protein: data.protein,
+      carbs: data.carbs,
+      fat: data.fat,
+    });
+    await Promise.all([loadEntries(), loadRecent()]);
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    backfillingId.value = 0;
   }
 }
 
@@ -735,6 +774,16 @@ onBeforeUnmount(() => {
               </div>
             </button>
             <div class="entry-actions">
+              <button
+                v-if="!entryHasMacros(e)"
+                type="button"
+                class="icon-btn"
+                :disabled="backfillingId !== 0"
+                @click="backfillMacros(e)"
+                :aria-label="$t('intake.ai_fill_macros')"
+              >
+                <i class="fa-solid" :class="backfillingId === e.id ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'" />
+              </button>
               <button type="button" class="icon-btn" @click="relog(e)" :aria-label="$t('intake.row.relog_title')"><i class="fa-solid fa-rotate-right" /></button>
               <button type="button" class="icon-btn" @click="startEdit(e)" :aria-label="$t('intake.row.edit_title')"><i class="fa-solid fa-pen" /></button>
               <button type="button" class="icon-btn danger" @click="removeEntry(e)" :aria-label="$t('intake.row.delete_title')"><i class="fa-solid fa-trash" /></button>
