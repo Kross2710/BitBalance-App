@@ -8,6 +8,8 @@ import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue';
 import { RouterLink } from 'vue-router';
 import { api } from '../lib/api.js';
 import { t, locale } from '../i18n/index.js';
+import { celebrate } from '../lib/unlockToast.js';
+import UnlockToast from './UnlockToast.vue';
 
 const GOAL_MODES = [
   { key: 'lose', icon: 'fa-arrow-trend-down' },
@@ -21,6 +23,12 @@ const error = ref('');
 const applying = ref(false);
 const flash = ref('');
 let flashTimer = null;
+const weightInput = ref('');
+const loggingWeight = ref(false);
+const weightFlash = ref('');
+let weightFlashTimer = null;
+const SPARK_W = 280;
+const SPARK_H = 44;
 
 const snapshot = ref(null); // full GET payload (physical, current_goal, intake_summary, ...)
 const plan = ref(null); // live recommendation (GET, then /preview)
@@ -123,6 +131,32 @@ async function applyPlan() {
   }
 }
 
+async function logWeight() {
+  const w = Number(weightInput.value);
+  if (loggingWeight.value || !(w > 0)) return;
+  error.value = '';
+  loggingWeight.value = true;
+  try {
+    const data = await api.post('/api/plan/weight', { weight: w });
+    snapshot.value = data;
+    // The server consumed the level-up flash on this response, so surface it here
+    // (matches IntakeView) — otherwise a weight-log level-up would be lost.
+    if (data.xp?.levelup) celebrate([{ type: 'levelup', level: data.xp.levelup.to }]);
+    weightInput.value = '';
+    // The new weight shifts BMR + ETA, so recompute the recommendation for the
+    // inputs currently on screen (which may differ from the saved prefs).
+    await runPreview();
+    const xp = data.xp?.added || 0;
+    weightFlash.value = xp > 0 ? t('plan.weight.logged_xp', { n: xp }) : t('plan.weight.logged');
+    clearTimeout(weightFlashTimer);
+    weightFlashTimer = setTimeout(() => (weightFlash.value = ''), 4000);
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    loggingWeight.value = false;
+  }
+}
+
 // Chart scale includes the goal line so it always sits within the bar band.
 const goalLineValue = computed(() => snapshot.value?.current_goal || plan.value?.calorie_goal || 0);
 const chartMax = computed(() => {
@@ -156,6 +190,30 @@ const bmi = computed(() => {
     idealMin: Math.round(18.5 * m * m),
     idealMax: Math.round(24.9 * m * m),
   };
+});
+
+const weightSummary = computed(() => snapshot.value?.weight_summary || null);
+const trendIcon = computed(() => {
+  const tr = weightSummary.value?.trend;
+  if (tr == null || tr === 0) return 'fa-minus';
+  return tr < 0 ? 'fa-arrow-down' : 'fa-arrow-up';
+});
+// Weight sparkline: scale to the window's own min/max so small changes are visible
+// (a 0-based scale would flatten a 70.x kg trend). Polyline, oldest -> newest.
+const sparkPoints = computed(() => {
+  const ws = (weightSummary.value?.chart || []).map((c) => c.weight);
+  if (ws.length < 2) return '';
+  const min = Math.min(...ws);
+  const max = Math.max(...ws);
+  const range = max - min || 1;
+  const pad = 6;
+  return ws
+    .map((w, i) => {
+      const x = (i / (ws.length - 1)) * SPARK_W;
+      const y = pad + (1 - (w - min) / range) * (SPARK_H - 2 * pad);
+      return `${Math.round(x)},${Math.round(y)}`;
+    })
+    .join(' ');
 });
 </script>
 
@@ -199,6 +257,38 @@ const bmi = computed(() => {
           </div>
           <span class="muted">{{ $t('plan.bmi.ideal', { min: bmi.idealMin, max: bmi.idealMax }) }}</span>
         </div>
+
+        <!-- Weight log + trend -->
+        <section class="card">
+          <strong class="sec-h">{{ $t('plan.weight.heading') }}</strong>
+          <div class="weight-row">
+            <input
+              v-model="weightInput"
+              class="num weight-input"
+              type="number"
+              min="1"
+              max="500"
+              step="0.1"
+              :placeholder="$t('plan.weight.placeholder')"
+              @keyup.enter="logWeight"
+            />
+            <button class="log-w-btn" :disabled="loggingWeight || !(Number(weightInput) > 0)" @click="logWeight">
+              <i class="fa-solid" :class="loggingWeight ? 'fa-spinner fa-spin' : 'fa-plus'" /> {{ $t('plan.weight.log') }}
+            </button>
+          </div>
+          <p v-if="weightFlash" class="ok">{{ weightFlash }}</p>
+          <template v-if="weightSummary && weightSummary.current != null">
+            <div class="weight-trend">
+              <strong>{{ weightSummary.current }} kg</strong>
+              <span v-if="weightSummary.trend != null && weightSummary.chart.length > 1" class="trend">
+                <i class="fa-solid" :class="trendIcon" /> {{ Math.abs(weightSummary.trend) }} kg
+              </span>
+            </div>
+            <svg v-if="sparkPoints" class="spark" :viewBox="`0 0 ${SPARK_W} ${SPARK_H}`" preserveAspectRatio="none" aria-hidden="true">
+              <polyline :points="sparkPoints" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" />
+            </svg>
+          </template>
+        </section>
 
         <!-- Inputs -->
         <section class="card">
@@ -295,6 +385,7 @@ const bmi = computed(() => {
         </section>
       </template>
     </div>
+    <UnlockToast />
   </div>
 </template>
 
@@ -336,6 +427,15 @@ const bmi = computed(() => {
 .bmi-cat.normal { color: var(--accent); }
 .bmi-cat.underweight, .bmi-cat.overweight { color: #fb923c; }
 .bmi-cat.obese { color: #f87171; }
+
+/* Weight log + trend sparkline */
+.weight-row { display: flex; gap: 8px; }
+.weight-input { flex: 1; min-width: 0; }
+.log-w-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; }
+.weight-trend { display: flex; align-items: baseline; gap: 10px; margin-top: 12px; }
+.weight-trend > strong { font-size: 22px; }
+.weight-trend .trend { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+.spark { display: block; width: 100%; height: 44px; margin-top: 8px; }
 
 /* Goal-mode segmented control */
 .mode-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }

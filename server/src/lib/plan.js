@@ -203,3 +203,34 @@ export function buildPlanNotes({ rawGoal, recommendedGoal, averageCalories, goal
   if (eta && !eta.valid) notes.push({ code: eta.code === 'gain_dir' ? 'eta_gain_dir' : 'eta_lose_dir' });
   return notes;
 }
+
+// Ports plan_weight_summary(). The last 8 weight logs -> current, trend (current
+// minus the oldest in the window), and a chart series ordered oldest..newest.
+// fallbackWeight (the profile weight) stands in for `current` when there are no
+// logs yet. weight_log.date_logged is the user's local day (no tz shift needed).
+export async function weightSummary(userId, fallbackWeight = null) {
+  const rows = await query(
+    'SELECT weight, date_logged FROM weight_log WHERE user_id = ? ORDER BY date_logged DESC, weight_id DESC LIMIT 8',
+    [userId]
+  );
+  if (!rows.length) {
+    return {
+      current: fallbackWeight != null && fallbackWeight > 0 ? Number(fallbackWeight) : null,
+      current_date: null,
+      trend: null,
+      chart: [],
+    };
+  }
+  const current = Number(rows[0].weight);
+  const oldest = Number(rows[rows.length - 1].weight);
+  const chart = rows
+    .slice()
+    .reverse()
+    .map((r) => ({ date: String(r.date_logged).slice(0, 10), weight: Number(r.weight) }));
+  return {
+    current,
+    current_date: String(rows[0].date_logged).slice(0, 10),
+    trend: Math.round((current - oldest) * 10) / 10,
+    chart,
+  };
+}

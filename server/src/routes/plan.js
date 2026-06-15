@@ -19,8 +19,10 @@ import {
   recentIntakeSummary,
   targetEta,
   buildPlanNotes,
+  weightSummary,
 } from '../lib/plan.js';
 import { physicalInfo } from '../lib/dashboard.js';
+import { awardWeightLog, getSummary, consumeLevelupFlash } from '../lib/xp.js';
 
 const router = Router();
 
@@ -114,6 +116,7 @@ async function buildSnapshot(userId, req) {
   const saved = (await loadPreferences(userId)) || { ...DEFAULT_PREFS };
   const goal = await latestGoal(userId);
   const intake = await recentIntakeSummary(userId, req.todayTz, req.tzShift);
+  const weight = await weightSummary(userId, physical.weight);
 
   const inputs = {
     activityLevel: ACTIVITY_FACTORS[saved.activity_level] ? saved.activity_level : DEFAULT_PREFS.activity_level,
@@ -137,6 +140,7 @@ async function buildSnapshot(userId, req) {
     target_eta: computed.target_eta,
     notes: computed.notes,
     intake_summary: intake,
+    weight_summary: weight,
   };
 }
 
@@ -208,6 +212,60 @@ router.post('/apply', requireAuth, async (req, res, next) => {
     ]);
 
     res.json({ ok: true, data: await buildSnapshot(req.user.user_id, req), message: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Log today's weight (ports dashboard/handlers/log_weight.php). Same-day upsert
+// (one row per local day, like onboarding) into weight_log, syncs the profile
+// weight so BMI + the plan stay current, and awards the weight-log XP (state-based:
+// only the first log of the day counts). Returns a fresh snapshot + the XP delta.
+router.post('/weight', requireAuth, async (req, res, next) => {
+  try {
+    const weight = Number(req.body?.weight);
+    if (!Number.isFinite(weight) || weight <= 0 || weight > 500) {
+      return res.status(422).json({ ok: false, data: null, message: 'Enter a weight between 1 and 500 kg.' });
+    }
+    const userId = req.user.user_id;
+    const day = req.todayTz;
+
+    const [existing] = await query(
+      'SELECT weight_id FROM weight_log WHERE user_id = ? AND date_logged = ? LIMIT 1',
+      [userId, day]
+    );
+    if (existing) {
+      await query('UPDATE weight_log SET weight = ? WHERE weight_id = ? AND user_id = ?', [weight, existing.weight_id, userId]);
+    } else {
+      await query('INSERT INTO weight_log (user_id, weight, date_logged) VALUES (?, ?, ?)', [userId, weight, day]);
+    }
+    // Keep the profile weight (drives BMI + the plan's BMR) in sync.
+    await query('UPDATE userPhysicalInfo SET weight = ? WHERE user_id = ?', [weight, userId]);
+
+    // XP is best-effort: a failure must not lose the logged weight. The award
+    // counts weight_log rows for today, so it runs AFTER the upsert.
+    let xpAdded = 0;
+    try {
+      const r = await awardWeightLog(userId, req.session, req.tzShift, day);
+      xpAdded = r.xp_added ?? 0;
+    } catch (e) {
+      console.error('weight xp award error:', e);
+    }
+    let xpSummary = null;
+    try {
+      xpSummary = await getSummary(userId);
+    } catch (e) {
+      console.error('weight xp summary error:', e);
+    }
+
+    res.json({
+      ok: true,
+      data: {
+        ...(await buildSnapshot(userId, req)),
+        xp: { added: xpAdded, summary: xpSummary, levelup: consumeLevelupFlash(req.session) },
+      },
+      message: null,
+    });
   } catch (err) {
     next(err);
   }
