@@ -29,6 +29,13 @@ const weightFlash = ref('');
 let weightFlashTimer = null;
 const SPARK_W = 280;
 const SPARK_H = 44;
+// Macro split editor: protein% + fat% are the free inputs, carbs% is the remainder
+// (so the split always sums to 100% of the calorie goal). Grams are computed from %.
+const macroPct = reactive({ protein: 30, fat: 25 });
+const applyingMacros = ref(false);
+const macroFlash = ref('');
+const macroError = ref('');
+let macroFlashTimer = null;
 
 const snapshot = ref(null); // full GET payload (physical, current_goal, intake_summary, ...)
 const plan = ref(null); // live recommendation (GET, then /preview)
@@ -65,6 +72,7 @@ async function load() {
     plan.value = data.plan;
     targetEta.value = data.target_eta;
     notes.value = data.notes;
+    seedMacroPct(data.current_macros, data.current_goal);
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -72,6 +80,14 @@ async function load() {
     await nextTick();
     suppress = false; // any change after this point is a real user edit
   }
+}
+
+// Seed the % inputs from the current stored/derived macro goals so the editor opens
+// reflecting what's in effect. carbs% is derived, so only protein% + fat% are seeded.
+function seedMacroPct(macros, goal) {
+  if (!goal || !macros) return;
+  macroPct.protein = Math.round(((Number(macros.protein) * 4) / goal) * 100);
+  macroPct.fat = Math.round(((Number(macros.fat) * 9) / goal) * 100);
 }
 onMounted(load);
 
@@ -157,6 +173,25 @@ async function logWeight() {
   }
 }
 
+async function applyMacros() {
+  if (applyingMacros.value || !macroGoalGrams.value.valid) return;
+  macroError.value = '';
+  applyingMacros.value = true;
+  try {
+    const g = macroGoalGrams.value;
+    const data = await api.post('/api/plan/macros', { protein: g.protein, carbs: g.carbs, fat: g.fat });
+    snapshot.value = data;
+    seedMacroPct(data.current_macros, data.current_goal);
+    macroFlash.value = t('plan.macros.saved');
+    clearTimeout(macroFlashTimer);
+    macroFlashTimer = setTimeout(() => (macroFlash.value = ''), 4000);
+  } catch (e) {
+    macroError.value = e.message;
+  } finally {
+    applyingMacros.value = false;
+  }
+}
+
 // Chart scale includes the goal line so it always sits within the bar band.
 const goalLineValue = computed(() => snapshot.value?.current_goal || plan.value?.calorie_goal || 0);
 const chartMax = computed(() => {
@@ -214,6 +249,24 @@ const sparkPoints = computed(() => {
       return `${Math.round(x)},${Math.round(y)}`;
     })
     .join(' ');
+});
+
+// Grams for the chosen % split against the current calorie goal. carbs% is the
+// remainder; the split is valid when protein% + fat% <= 100 and a goal exists.
+const macroGoalGrams = computed(() => {
+  const goal = snapshot.value?.current_goal || 0;
+  const p = Math.max(0, Number(macroPct.protein) || 0);
+  const f = Math.max(0, Number(macroPct.fat) || 0);
+  const carbsPct = Math.max(0, 100 - p - f);
+  const protein = Math.round(((p / 100) * goal) / 4);
+  const carbs = Math.round(((carbsPct / 100) * goal) / 4);
+  const fat = Math.round(((f / 100) * goal) / 9);
+  // The server bounds each macro to 0-999 g; for a very high calorie goal an
+  // extreme split can exceed that, so guard it here too rather than 422 on save.
+  let warn = null;
+  if (p + f > 100) warn = 'over_100';
+  else if (protein > 999 || carbs > 999 || fat > 999) warn = 'too_high';
+  return { protein, carbs, fat, carbsPct, warn, valid: goal > 0 && !warn };
 });
 </script>
 
@@ -355,6 +408,34 @@ const sparkPoints = computed(() => {
           <p v-if="error" class="error">{{ error }}</p>
         </section>
 
+        <!-- Macro split editor: sets the current goal's stored P/C/F goals -->
+        <section v-if="snapshot.current_goal" class="card">
+          <strong class="sec-h">{{ $t('plan.macros.heading') }}</strong>
+          <div class="macro-edit">
+            <div class="mfield">
+              <label>{{ $t('dashboard.macros.protein') }} %</label>
+              <input v-model.number="macroPct.protein" class="num" type="number" min="0" max="100" />
+              <small class="muted">{{ macroGoalGrams.protein }}g</small>
+            </div>
+            <div class="mfield">
+              <label>{{ $t('dashboard.macros.fat') }} %</label>
+              <input v-model.number="macroPct.fat" class="num" type="number" min="0" max="100" />
+              <small class="muted">{{ macroGoalGrams.fat }}g</small>
+            </div>
+            <div class="mfield">
+              <label>{{ $t('dashboard.macros.carbs') }} %</label>
+              <input :value="macroGoalGrams.carbsPct" class="num" type="number" disabled />
+              <small class="muted">{{ macroGoalGrams.carbs }}g</small>
+            </div>
+          </div>
+          <p v-if="macroGoalGrams.warn" class="macro-warn">{{ $t('plan.macros.' + macroGoalGrams.warn) }}</p>
+          <button class="apply-btn" :disabled="applyingMacros || !macroGoalGrams.valid" @click="applyMacros">
+            <i class="fa-solid" :class="applyingMacros ? 'fa-spinner fa-spin' : 'fa-sliders'" /> {{ $t('plan.macros.save') }}
+          </button>
+          <p v-if="macroFlash" class="ok">{{ macroFlash }}</p>
+          <p v-if="macroError" class="error">{{ macroError }}</p>
+        </section>
+
         <!-- 7-day intake vs plan -->
         <section class="card">
           <strong class="sec-h">{{ $t('plan.recent.heading') }}</strong>
@@ -436,6 +517,14 @@ const sparkPoints = computed(() => {
 .weight-trend > strong { font-size: 22px; }
 .weight-trend .trend { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
 .spark { display: block; width: 100%; height: 44px; margin-top: 8px; }
+
+/* Macro split editor */
+.macro-edit { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mfield { display: flex; flex-direction: column; gap: 4px; }
+.mfield label { font-size: 12px; color: var(--muted); }
+.mfield .num { text-align: center; }
+.mfield small { text-align: center; }
+.macro-warn { margin: 8px 0 0; font-size: 13px; color: #fb923c; }
 
 /* Goal-mode segmented control */
 .mode-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }

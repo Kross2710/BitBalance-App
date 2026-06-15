@@ -22,6 +22,7 @@ import {
   weightSummary,
 } from '../lib/plan.js';
 import { physicalInfo } from '../lib/dashboard.js';
+import { resolveMacroGoals } from '../lib/intake.js';
 import { awardWeightLog, getSummary, consumeLevelupFlash } from '../lib/xp.js';
 
 const router = Router();
@@ -117,6 +118,7 @@ async function buildSnapshot(userId, req) {
   const goal = await latestGoal(userId);
   const intake = await recentIntakeSummary(userId, req.todayTz, req.tzShift);
   const weight = await weightSummary(userId, physical.weight);
+  const currentMacros = await resolveMacroGoals(userId);
 
   const inputs = {
     activityLevel: ACTIVITY_FACTORS[saved.activity_level] ? saved.activity_level : DEFAULT_PREFS.activity_level,
@@ -141,6 +143,7 @@ async function buildSnapshot(userId, req) {
     notes: computed.notes,
     intake_summary: intake,
     weight_summary: weight,
+    current_macros: currentMacros,
   };
 }
 
@@ -266,6 +269,42 @@ router.post('/weight', requireAuth, async (req, res, next) => {
       },
       message: null,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Save an explicit macro split for the current calorie goal (ports
+// dashboard/handlers/update_macro_goals.php). Writes a NEW userGoal row carrying
+// the current calorie goal + the chosen P/C/F grams, attributed source='self', so
+// resolveMacroGoals() surfaces these (instead of the derived split) on the
+// Dashboard/Intake cards. Latest-wins, history-preserving like the other goal writes.
+router.post('/macros', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user.user_id;
+    const macros = {};
+    for (const key of ['protein', 'carbs', 'fat']) {
+      const grams = Math.round(Number(req.body?.[key]));
+      if (!Number.isFinite(grams) || grams < 0 || grams > 999) {
+        return res
+          .status(422)
+          .json({ ok: false, data: null, message: 'Macro values must be whole numbers between 0 and 999 grams.' });
+      }
+      macros[key] = grams;
+    }
+
+    const goal = await latestGoal(userId);
+    if (goal == null || goal <= 0) {
+      return res.status(422).json({ ok: false, data: null, message: 'Set a calorie goal before customizing macros.' });
+    }
+
+    await query(
+      `INSERT INTO userGoal (user_id, calorie_goal, protein_goal, carbs_goal, fat_goal, set_by, source, date_set)
+       VALUES (?, ?, ?, ?, ?, ?, 'self', NOW())`,
+      [userId, goal, macros.protein, macros.carbs, macros.fat, userId]
+    );
+
+    res.json({ ok: true, data: await buildSnapshot(userId, req), message: null });
   } catch (err) {
     next(err);
   }

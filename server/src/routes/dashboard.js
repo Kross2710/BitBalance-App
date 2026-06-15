@@ -1,7 +1,7 @@
 // Dashboard routes — port api/dashboard/day.php and api/dashboard/summary.php.
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { macroGoalsFromCalories, shapeEntry } from '../lib/intake.js';
+import { resolveMacroGoals, shapeEntry } from '../lib/intake.js';
 import { isValidDate } from '../lib/dates.js';
 import { finalizeYesterdayGoals, awardStreakMilestone, getSummary } from '../lib/xp.js';
 import {
@@ -65,7 +65,7 @@ router.get('/day', requireAuth, async (req, res, next) => {
     const hasGoal = goal !== null && goal > 0;
 
     const macros = await macroTotalsForDate(userId, selectedDate, shift);
-    const macroGoals = macroGoalsFromCalories(goal);
+    const macroGoals = await resolveMacroGoals(userId);
 
     const progressPercentage = hasGoal ? clampPct(round2((totalCalories / goal) * 100)) : 0;
     const statusClass = hasGoal ? (totalCalories > goal ? 'overlimit' : 'ongoing') : 'unset';
@@ -154,7 +154,7 @@ router.get('/summary', requireAuth, async (req, res, next) => {
     const totalCalories = await totalCaloriesForDate(userId, today, shift);
     const goal = await calorieGoal(userId);
     const macros = await macroTotalsForDate(userId, today, shift);
-    const macroGoals = macroGoalsFromCalories(goal);
+    const macroGoals = await resolveMacroGoals(userId);
     const streak = await loggingStreak(userId);
 
     const progressPercentage = goal && goal > 0 ? clampPct(round2((totalCalories / goal) * 100)) : 0;
