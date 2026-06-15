@@ -9,8 +9,10 @@ import { ref } from 'vue';
 import AiCoachPanel from '../components/AiCoachPanel.vue';
 import MyTrainerPanel from '../components/MyTrainerPanel.vue';
 import PlanPanel from '../components/PlanPanel.vue';
+import { useBadgesStore } from '../stores/badges.js';
 
 const tab = ref('ai'); // 'ai' | 'trainer' | 'plan'
+const badges = useBadgesStore().counts;
 </script>
 
 <template>
@@ -21,6 +23,7 @@ const tab = ref('ai'); // 'ai' | 'trainer' | 'plan'
       </button>
       <button class="tab" :class="{ on: tab === 'trainer' }" role="tab" :aria-selected="tab === 'trainer'" @click="tab = 'trainer'">
         <i class="fa-solid fa-user-tie" /> {{ $t('coach.tab.trainer') }}
+        <span v-if="badges['/coach']" class="seg-badge">{{ badges['/coach'] }}</span>
       </button>
       <button class="tab" :class="{ on: tab === 'plan' }" role="tab" :aria-selected="tab === 'plan'" @click="tab = 'plan'">
         <i class="fa-solid fa-route" /> {{ $t('coach.tab.plan') }}
@@ -66,8 +69,11 @@ const tab = ref('ai'); // 'ai' | 'trainer' | 'plan'
   align-items: center;
   justify-content: center;
   gap: 7px;
+  position: relative;
 }
 .tab.on { color: var(--accent); border-color: var(--accent); background: var(--inset); }
+/* Absolute so the count never crowds the icon + label at 375px. */
+.seg-badge { position: absolute; top: 5px; right: 8px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; }
 
 .hub-panel {
   flex: 1;

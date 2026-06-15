@@ -16,6 +16,7 @@ const pending = ref(null); // outgoing request awaiting approval
 const invites = ref([]); // incoming invites from trainers (PT-initiated)
 const feedback = ref([]);
 const proposal = ref(null);
+const currentGoal = ref(null); // the client's active goal, for the proposal diff
 const tab = ref('chat'); // 'chat' | 'advice'
 const proposalBusy = ref(false);
 const reqBusy = ref(false);
@@ -53,6 +54,7 @@ async function load() {
     invites.value = data.invites || [];
     feedback.value = data.feedback || [];
     proposal.value = data.proposal;
+    currentGoal.value = data.current_goal ?? null;
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -75,10 +77,21 @@ async function respondProposal(decision) {
   }
 }
 
-function macroLine(p) {
-  if (p.protein_goal == null || p.carbs_goal == null || p.fat_goal == null) return null;
-  return `${t('intake.macro_abbr.protein')} ${p.protein_goal}g · ${t('intake.macro_abbr.carbs')} ${p.carbs_goal}g · ${t('intake.macro_abbr.fat')} ${p.fat_goal}g`;
-}
+// Before/after diff for the proposal: current goal vs proposed, per metric.
+// from is null when there's no current value to compare (no goal, or a
+// calorie-only goal with no explicit macro) — then we show just the target.
+const goalDiff = computed(() => {
+  const p = proposal.value;
+  if (!p) return [];
+  const cur = currentGoal.value;
+  const rows = [{ label: t('coach.my_trainer.diff.calories'), from: cur?.calorie_goal ?? null, to: p.calorie_goal, unit: '' }];
+  if (p.protein_goal != null && p.carbs_goal != null && p.fat_goal != null) {
+    rows.push({ label: t('intake.macro.protein'), from: cur?.protein ?? null, to: p.protein_goal, unit: 'g' });
+    rows.push({ label: t('intake.macro.carbs'), from: cur?.carbs ?? null, to: p.carbs_goal, unit: 'g' });
+    rows.push({ label: t('intake.macro.fat'), from: cur?.fat ?? null, to: p.fat_goal, unit: 'g' });
+  }
+  return rows.map((r) => ({ ...r, delta: r.from == null ? null : r.to - r.from }));
+});
 
 async function cancelRequest() {
   if (reqBusy.value) return;
@@ -207,8 +220,17 @@ onMounted(load);
         </div>
         <p class="proposal-body">
           <strong>{{ $t('coach.my_trainer.suggests_goal', { name: trainerName, calories: proposal.calorie_goal }) }}</strong>
-          <span v-if="macroLine(proposal)" class="muted"> · {{ macroLine(proposal) }}</span>
         </p>
+        <div v-if="goalDiff.length" class="proposal-diff">
+          <div v-for="row in goalDiff" :key="row.label" class="pd-row">
+            <span class="pd-label">{{ row.label }}</span>
+            <span class="pd-change">
+              <template v-if="row.from != null"><span class="pd-from">{{ row.from }}{{ row.unit }}</span> <i class="fa-solid fa-arrow-right pd-arrow" /> </template>
+              <strong class="pd-to">{{ row.to }}{{ row.unit }}</strong>
+              <span v-if="row.delta" class="pd-delta muted">({{ row.delta > 0 ? '+' : '' }}{{ row.delta }})</span>
+            </span>
+          </div>
+        </div>
         <p v-if="proposal.note" class="proposal-note muted">“{{ proposal.note }}”</p>
         <div class="proposal-actions">
           <button class="accept" :disabled="proposalBusy" @click="respondProposal('accept')">{{ $t('coach.my_trainer.accept') }}</button>
@@ -333,6 +355,14 @@ onMounted(load);
 .proposal-head i { font-size: 14px; }
 .proposal-body { margin: 0 0 4px; font-size: 14px; }
 .proposal-note { margin: 0 0 10px; font-style: italic; }
+.proposal-diff { display: flex; flex-direction: column; gap: 5px; margin: 0 0 10px; }
+.pd-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 13px; }
+.pd-label { color: var(--muted); }
+.pd-change { display: inline-flex; align-items: baseline; gap: 6px; }
+.pd-from { color: var(--muted); }
+.pd-arrow { font-size: 10px; color: var(--muted); }
+.pd-to { color: var(--text); }
+.pd-delta { font-size: 12px; }
 .proposal-actions { display: flex; gap: 8px; }
 .proposal-actions button { min-height: 38px; padding: 8px 18px; font-size: 13px; }
 .proposal-actions .decline { background: var(--card); color: var(--text); border: 1px solid var(--border); }

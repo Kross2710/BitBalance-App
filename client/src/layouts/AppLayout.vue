@@ -37,7 +37,7 @@ onMounted(() => badgesStore.refresh());
 watch(
   () => route.name,
   (name) => {
-    if (name === 'dashboard' || name === 'intake' || name === 'friends') badgesStore.refresh();
+    if (['dashboard', 'intake', 'friends', 'coach', 'trainer'].includes(name)) badgesStore.refresh();
   }
 );
 
@@ -78,6 +78,7 @@ watch(
             <img v-if="auth.user?.profile_image" :src="auth.user.profile_image" class="topbar-avatar" alt="" />
             <span v-else class="topbar-avatar fallback">{{ userInitial }}</span>
           </button>
+          <span v-if="badges['/trainer']" class="avatar-dot" aria-hidden="true" />
           <div v-if="menuOpen" class="avatar-backdrop" @click="menuOpen = false" />
           <div v-if="menuOpen" class="avatar-menu" role="menu">
             <div class="am-head">
@@ -86,6 +87,7 @@ watch(
             </div>
             <RouterLink v-if="auth.user?.role === 'pt'" to="/trainer" class="am-item" role="menuitem">
               <i class="fa-solid fa-user-tie" /> {{ $t('nav.trainer_workspace') }}
+              <span v-if="badges['/trainer']" class="am-badge">{{ badges['/trainer'] }}</span>
             </RouterLink>
             <RouterLink v-if="auth.user?.role === 'admin'" to="/admin" class="am-item" role="menuitem">
               <i class="fa-solid fa-shield-halved" /> {{ $t('nav.admin') }}
@@ -340,6 +342,9 @@ watch(
 .am-item:hover { background: var(--inset); }
 .am-item.router-link-active { color: var(--accent); }
 .am-item.router-link-active i { color: var(--accent); }
+.am-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+/* PT-only unread/request indicator on the avatar (the workspace lives in this menu). */
+.avatar-dot { position: absolute; top: 8px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: #ef4444; border: 2px solid var(--bg); pointer-events: none; }
 
 .content {
   padding: 4px 0 32px;

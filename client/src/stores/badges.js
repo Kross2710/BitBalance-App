@@ -10,20 +10,25 @@
 import { defineStore } from 'pinia';
 import { reactive } from 'vue';
 import { api } from '../lib/api.js';
+import { useAuthStore } from './auth.js';
 
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snack'];
 
 export const useBadgesStore = defineStore('badges', () => {
-  const counts = reactive({ '/intake': 0, '/friends': 0 });
+  // /coach holds the client's trainer-relationship count (unread chat + advice +
+  // a pending proposal/invite); /trainer holds the PT workspace count (unread +
+  // requests). Only one is non-zero, depending on the user's role.
+  const counts = reactive({ '/intake': 0, '/friends': 0, '/coach': 0, '/trainer': 0 });
 
   async function refresh() {
     // Independent sources; a failure on one must not blank the others.
     // Background: this runs on mount + every tab change, so it must not drive the
     // global loading bar (would flash on every navigation).
-    const [summary, pending, reminders] = await Promise.allSettled([
+    const [summary, pending, reminders, pt] = await Promise.allSettled([
       api.get('/api/dashboard/summary', { background: true }),
       api.get('/api/social/pending-count', { background: true }),
       api.get('/api/reminders', { background: true }),
+      api.get('/api/pt/unread-count', { background: true }),
     ]);
 
     if (summary.status === 'fulfilled' && reminders.status === 'fulfilled') {
@@ -44,6 +49,15 @@ export const useBadgesStore = defineStore('badges', () => {
 
     if (pending.status === 'fulfilled') {
       counts['/friends'] = Number(pending.value.count) || 0;
+    }
+
+    if (pt.status === 'fulfilled') {
+      const n = Number(pt.value.count) || 0;
+      // A trainer's badge belongs on the /trainer workspace (avatar menu); a
+      // regular client's on the /coach tab, where My Trainer lives.
+      const isPt = useAuthStore().user?.role === 'pt';
+      counts['/trainer'] = isPt ? n : 0;
+      counts['/coach'] = isPt ? 0 : n;
     }
   }
 

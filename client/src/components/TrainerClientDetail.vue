@@ -30,6 +30,40 @@ const trendMax = computed(() => {
   return Math.max(goal, ...t.map((d) => d.cal), 1);
 });
 
+// Today's row (last day of the server trend) + goal protein, for an at-a-glance
+// calories/protein adherence figure under the chart.
+const todayRow = computed(() => (detail.value?.trend?.length ? detail.value.trend[detail.value.trend.length - 1] : null));
+const proteinGoal = computed(() => detail.value?.macro_goals?.protein || null);
+
+// Weight trail sparkline (same approach as the planner's): scale to the window's
+// own min/max so small changes stay visible.
+const SPARK_W = 240;
+const SPARK_H = 40;
+const weight = computed(() => detail.value?.weight || null);
+const weightTrendIcon = computed(() => {
+  const tr = weight.value?.trend;
+  if (tr == null || tr === 0) return 'fa-minus';
+  return tr < 0 ? 'fa-arrow-down' : 'fa-arrow-up';
+});
+const sparkPoints = computed(() => {
+  const ws = (weight.value?.chart || []).map((c) => c.weight);
+  if (ws.length < 2) return '';
+  const min = Math.min(...ws);
+  const max = Math.max(...ws);
+  const range = max - min || 1;
+  const pad = 5;
+  return ws
+    .map((w, i) => {
+      const x = (i / (ws.length - 1)) * SPARK_W;
+      const y = pad + (1 - (w - min) / range) * (SPARK_H - 2 * pad);
+      return `${Math.round(x)},${Math.round(y)}`;
+    })
+    .join(' ');
+});
+
+// Enlarge a diary meal photo.
+const lightbox = ref('');
+
 // Feedback editor state
 const fbDate = ref('');
 const fbContent = ref('');
@@ -173,7 +207,24 @@ onMounted(load);
       </div>
       <p class="trend-cap muted">
         {{ $t('trainer.detail.trend_caption', { goal: detail.calorie_goal ?? '—', today: detail.trend[detail.trend.length - 1].cal }) }}
+        <span v-if="todayRow"> · {{ $t('intake.macro_abbr.protein') }} {{ todayRow.pro }}<template v-if="proteinGoal">/{{ proteinGoal }}</template>g</span>
       </p>
+
+      <!-- Weight trend -->
+      <div v-if="weight" class="d-weight">
+        <div class="dw-head">
+          <span class="muted">{{ $t('trainer.detail.weight') }}</span>
+          <span class="dw-now">
+            <strong>{{ weight.current }} kg</strong>
+            <span v-if="weight.trend != null && weight.chart.length > 1" class="dw-trend">
+              <i class="fa-solid" :class="weightTrendIcon" /> {{ Math.abs(weight.trend) }} kg
+            </span>
+          </span>
+        </div>
+        <svg v-if="sparkPoints" class="dw-spark" :viewBox="`0 0 ${SPARK_W} ${SPARK_H}`" preserveAspectRatio="none" aria-hidden="true">
+          <polyline :points="sparkPoints" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" />
+        </svg>
+      </div>
 
       <!-- Tabs -->
       <div class="d-tabs" role="tablist">
@@ -186,11 +237,22 @@ onMounted(load);
       <div v-show="tab === 'diary'" class="pane diary">
         <p v-if="!detail.diary.length" class="muted center pad">{{ $t('trainer.detail.no_meals') }}</p>
         <div v-for="(m, i) in detail.diary" :key="i" class="log-row">
-          <div class="log-main">
-            <strong>{{ m.food_item }}</strong>
-            <span class="cat muted">{{ m.meal_category }}</span>
+          <button
+            v-if="m.image_path"
+            type="button"
+            class="log-thumb"
+            @click="lightbox = m.image_path"
+            :aria-label="$t('intake.detail.view_photo')"
+          >
+            <img :src="m.image_path" loading="lazy" decoding="async" :alt="m.food_item" />
+          </button>
+          <div class="log-body">
+            <div class="log-main">
+              <strong>{{ m.food_item }}</strong>
+              <span class="cat muted">{{ m.meal_category }}</span>
+            </div>
+            <div class="log-macros muted">{{ m.calories }} {{ $t('common.kcal') }} · {{ $t('intake.macro_abbr.protein') }}{{ m.protein }} {{ $t('intake.macro_abbr.carbs') }}{{ m.carbs }} {{ $t('intake.macro_abbr.fat') }}{{ m.fat }}</div>
           </div>
-          <div class="log-macros muted">{{ m.calories }} {{ $t('common.kcal') }} · {{ $t('intake.macro_abbr.protein') }}{{ m.protein }} {{ $t('intake.macro_abbr.carbs') }}{{ m.carbs }} {{ $t('intake.macro_abbr.fat') }}{{ m.fat }}</div>
         </div>
       </div>
 
@@ -248,6 +310,13 @@ onMounted(load);
         </div>
       </div>
     </template>
+
+    <!-- Enlarged diary photo (teleported above everything). -->
+    <Teleport to="body">
+      <div v-if="lightbox" class="lightbox" @click="lightbox = ''">
+        <img :src="lightbox" alt="" />
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -307,10 +376,26 @@ onMounted(load);
 
 /* Diary */
 .diary { display: flex; flex-direction: column; gap: 6px; }
-.log-row { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+.log-row { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+.log-thumb { flex: none; width: 44px; height: 44px; min-height: 0; padding: 0; border-radius: 8px; overflow: hidden; background: var(--inset); border: 1px solid var(--border); cursor: pointer; }
+.log-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.log-body { flex: 1; min-width: 0; }
 .log-main { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .log-main .cat { text-transform: capitalize; font-size: 12px; }
 .log-macros { margin-top: 3px; font-size: 12px; }
+
+/* Weight trend block */
+.d-weight { flex: none; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+.dw-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dw-head .muted { font-size: 12px; }
+.dw-now { display: inline-flex; align-items: baseline; gap: 8px; }
+.dw-now > strong { font-size: 16px; }
+.dw-trend { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+.dw-spark { display: block; width: 100%; height: 40px; margin-top: 6px; }
+
+/* Enlarged diary photo */
+.lightbox { position: fixed; inset: 0; z-index: 1100; background: rgba(0, 0, 0, 0.85); display: grid; place-items: center; padding: 24px; }
+.lightbox img { max-width: 100%; max-height: 100%; border-radius: 12px; }
 
 /* Forms (feedback + goal) */
 .fld { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }

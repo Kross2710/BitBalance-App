@@ -27,6 +27,13 @@ if (auth.user && auth.user.role !== 'pt') router.replace('/dashboard');
 const unreadTotal = computed(() => clients.value.reduce((n, c) => n + (c.unread || 0), 0));
 const noLogCount = computed(() => clients.value.filter((c) => c.calories_today <= 0).length);
 
+// "Needs attention" triage: clients who haven't logged today or have an unread
+// message. The Clients tab can filter to just these as the roster grows.
+const filterMode = ref('all'); // 'all' | 'attention'
+const needsAttention = (c) => c.calories_today <= 0 || c.unread > 0;
+const attentionCount = computed(() => clients.value.filter(needsAttention).length);
+const visibleClients = computed(() => (filterMode.value === 'attention' ? clients.value.filter(needsAttention) : clients.value));
+
 function clientName(c) {
   return `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || c.user_name;
 }
@@ -112,9 +119,16 @@ onMounted(load);
     <!-- CLIENTS: master-detail -->
     <div v-show="tab === 'clients' && !loading" class="workspace" :class="{ 'has-detail': selected }">
       <div class="list-col">
+        <div v-if="clients.length" class="list-filter">
+          <button class="lf-btn" :class="{ on: filterMode === 'all' }" @click="filterMode = 'all'">{{ $t('trainer.filter.all') }}</button>
+          <button class="lf-btn" :class="{ on: filterMode === 'attention' }" @click="filterMode = 'attention'">
+            {{ $t('trainer.filter.attention') }}<span v-if="attentionCount" class="lf-count">{{ attentionCount }}</span>
+          </button>
+        </div>
         <p v-if="!clients.length" class="muted center pad">{{ $t('trainer.empty.clients') }}</p>
+        <p v-else-if="!visibleClients.length" class="muted center pad">{{ $t('trainer.filter.all_clear') }}</p>
         <button
-          v-for="c in clients"
+          v-for="c in visibleClients"
           :key="c.user_id"
           class="client-card"
           :class="{ active: selected && selected.user_id === c.user_id, alert: c.calories_today <= 0 }"
@@ -131,6 +145,10 @@ onMounted(load);
               <template v-else>{{ $t('trainer.client.kcal_today', { calories: c.calories_today }) }}</template>
             </span>
             <span v-if="c.calorie_goal" class="c-bar"><span class="c-fill" :class="{ over: pct(c) >= 110 }" :style="{ width: Math.min(pct(c), 100) + '%' }" /></span>
+            <span v-if="c.logging_streak || c.has_pending_proposal" class="c-tags">
+              <span v-if="c.logging_streak" class="c-tag streak"><i class="fa-solid fa-fire" /> {{ c.logging_streak }}</span>
+              <span v-if="c.has_pending_proposal" class="c-tag pending"><i class="fa-solid fa-bullseye" /> {{ $t('trainer.client.proposal_pending') }}</span>
+            </span>
           </span>
           <span v-if="c.calories_today <= 0" class="flag">{{ $t('trainer.flag.no_log') }}</span>
         </button>
@@ -234,6 +252,21 @@ onMounted(load);
 .c-fill { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
 .c-fill.over { background: #f59e0b; }
 .flag { position: absolute; top: 8px; right: 10px; font-size: 10px; color: #f59e0b; font-weight: 700; }
+
+/* Triage filter + per-client tag chips */
+.list-filter { flex: none; display: flex; gap: 6px; margin-bottom: 2px; }
+.lf-btn {
+  flex: 1; min-height: 34px; padding: 5px 8px; border-radius: 8px;
+  background: var(--card); border: 1px solid var(--border); color: var(--muted);
+  font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.lf-btn.on { color: var(--accent); border-color: var(--accent); background: var(--inset); }
+.lf-count { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #f59e0b; color: #1a1d24; font-size: 10px; font-weight: 800; display: grid; place-items: center; }
+.c-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+.c-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: var(--inset); color: var(--muted); }
+.c-tag i { font-size: 10px; }
+.c-tag.streak { color: var(--streak); }
+.c-tag.pending { color: var(--accent); }
 
 .detail-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; }
 .detail-empty i { font-size: 26px; opacity: 0.5; }

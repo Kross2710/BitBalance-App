@@ -16,6 +16,8 @@ import {
   feedbackHistory,
   markFeedbackSeen,
   pendingProposal,
+  currentGoal,
+  ptBadgeCount,
   respondProposal,
   clientChatFetch,
   clientChatSend,
@@ -77,9 +79,23 @@ router.get(
       return ok(res, { trainer: null, pending, invites, feedback: [], proposal: null });
     }
 
-    const [feedback, proposal] = await Promise.all([feedbackHistory(me), pendingProposal(me)]);
+    const [feedback, proposal, current_goal] = await Promise.all([
+      feedbackHistory(me),
+      pendingProposal(me),
+      currentGoal(me),
+    ]);
     await markFeedbackSeen(me);
-    ok(res, { trainer, pending: null, invites: [], feedback, proposal });
+    ok(res, { trainer, pending: null, invites: [], feedback, proposal, current_goal });
+  })
+);
+
+// Role-aware nav-badge count for the PT relationship (client: unread + proposal +
+// invites; trainer: unread + pending requests). Powers the Coach/Trainer badge.
+router.get(
+  '/unread-count',
+  requireAuth,
+  handle(async (req, res) => {
+    ok(res, { count: await ptBadgeCount(req.user.user_id, req.user.role) });
   })
 );
 
