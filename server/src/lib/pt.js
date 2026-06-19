@@ -9,6 +9,7 @@ import { pool, query } from '../db.js';
 import { addDays, weekdayLabel, isValidDate } from './dates.js';
 import { ctxForStoredTz } from './tz.js';
 import { normalizeProfileImage } from './users.js';
+import { resolveMacrosFromGoalRow } from './intake.js';
 
 // Thrown for user-facing validation failures (mapped to a 422 by the route).
 export class PtActionError extends Error {}
@@ -18,6 +19,22 @@ const MESSAGE_MAX = 2000; // UTF-8 codepoints, mirrors pt_chat.php
 function trainerName(row) {
   const name = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim();
   return name || row.user_name || 'Your trainer';
+}
+
+// Throw if the trainer is already at their max_clients capacity (accepted links).
+// Checked both at send time (request/invite) AND at accept time, so a stale
+// pending link can't push a trainer past capacity after they fill up.
+async function assertTrainerHasCapacity(trainerId, message = 'This trainer is at capacity.') {
+  const capRows = await query(
+    `SELECT p.max_clients,
+            (SELECT COUNT(*) FROM trainer_client tc WHERE tc.trainer_id = ? AND tc.status = 'accepted') AS cnt
+       FROM pt_profile p WHERE p.user_id = ? LIMIT 1`,
+    [trainerId, trainerId]
+  );
+  const cap = capRows[0];
+  if (cap && cap.max_clients != null && Number(cap.cnt) >= Number(cap.max_clients)) {
+    throw new PtActionError(message);
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -106,6 +123,64 @@ export async function pendingProposal(clientId) {
     created_at: r.created_at,
     trainer_name: trainerName(r),
   };
+}
+
+// The client's current goal (calorie + resolved macros), so a trainer's proposal
+// can be shown as a before/after diff. null when no goal is set yet.
+export async function currentGoal(clientId) {
+  const rows = await query(
+    `SELECT calorie_goal, protein_goal, carbs_goal, fat_goal
+       FROM userGoal WHERE user_id = ? ORDER BY date_set DESC, userGoal_id DESC LIMIT 1`,
+    [clientId]
+  );
+  const row = rows[0] || null;
+  if (!row || row.calorie_goal == null) return null;
+  // Raw (not derived) macros so the proposal before/after diff never invents a
+  // "current" macro for a calorie-only goal — null means the client hasn't set it.
+  return {
+    calorie_goal: Number(row.calorie_goal),
+    protein: row.protein_goal == null ? null : Number(row.protein_goal),
+    carbs: row.carbs_goal == null ? null : Number(row.carbs_goal),
+    fat: row.fat_goal == null ? null : Number(row.fat_goal),
+  };
+}
+
+// Aggregate nav-badge count for the PT relationship. Role-aware:
+//   trainer → unread client messages + pending connection requests
+//   client  → unread trainer messages + unseen feedback + a pending proposal + incoming invites
+// The client's unread/feedback clear when they open the panel (chatFetch /
+// markFeedbackSeen), so the badge self-clears like the friends one.
+export async function ptBadgeCount(userId, role) {
+  if (role === 'pt') {
+    const [m] = await query(
+      `SELECT COUNT(*) AS n FROM pt_message msg
+         JOIN pt_thread t ON msg.thread_id = t.thread_id
+         JOIN trainer_client tc ON tc.trainer_id = t.trainer_id AND tc.client_id = t.client_id AND tc.status = 'accepted'
+        WHERE t.trainer_id = ? AND msg.sender_role = 'client' AND msg.seen_at IS NULL`,
+      [userId]
+    );
+    const [r] = await query(
+      `SELECT COUNT(*) AS n FROM trainer_client
+        WHERE trainer_id = ? AND status = 'pending' AND (initiated_by = 'client' OR initiated_by IS NULL)`,
+      [userId]
+    );
+    return Number(m.n) + Number(r.n);
+  }
+  let total = 0;
+  const t = await myTrainer(userId);
+  if (t) {
+    const [m] = await query(
+      `SELECT COUNT(*) AS n FROM pt_message msg
+         JOIN pt_thread th ON msg.thread_id = th.thread_id
+        WHERE th.trainer_id = ? AND th.client_id = ? AND msg.sender_role = 'trainer' AND msg.seen_at IS NULL`,
+      [t.user_id, userId]
+    );
+    const [f] = await query(`SELECT COUNT(*) AS n FROM pt_feedback WHERE client_id = ? AND seen_at IS NULL`, [userId]);
+    total += Number(m.n) + Number(f.n);
+    if (await pendingProposal(userId)) total += 1;
+  }
+  const invites = await incomingInvites(userId);
+  return total + invites.length;
 }
 
 // Accept / decline a pending proposal. Ports respond_goal_proposal.php: on
@@ -310,7 +385,7 @@ export async function incomingInvites(clientId) {
 // clears any other in-flight links so the one-trainer rule holds); decline deletes.
 export async function respondInvite(clientId, requestId, action) {
   const rows = await query(
-    `SELECT id FROM trainer_client
+    `SELECT id, trainer_id FROM trainer_client
       WHERE id = ? AND client_id = ? AND status = 'pending' AND initiated_by = 'trainer'
       LIMIT 1`,
     [requestId, clientId]
@@ -327,6 +402,8 @@ export async function respondInvite(clientId, requestId, action) {
     [clientId]
   );
   if (accepted.length) throw new PtActionError('You already have a trainer.');
+  // The trainer may have filled up since sending this invite — re-check capacity.
+  await assertTrainerHasCapacity(Number(rows[0].trainer_id));
 
   const conn = await pool.getConnection();
   try {
@@ -402,17 +479,8 @@ export async function sendTrainerRequest(clientId, trainerId) {
     );
   }
 
-  // Capacity guard.
-  const capRows = await query(
-    `SELECT p.max_clients,
-            (SELECT COUNT(*) FROM trainer_client tc WHERE tc.trainer_id = ? AND tc.status = 'accepted') AS cnt
-       FROM pt_profile p WHERE p.user_id = ? LIMIT 1`,
-    [tid, tid]
-  );
-  const cap = capRows[0];
-  if (cap && cap.max_clients != null && Number(cap.cnt) >= Number(cap.max_clients)) {
-    throw new PtActionError('This trainer is at capacity.');
-  }
+  // Capacity guard (re-checked at accept time too, in case the trainer fills up).
+  await assertTrainerHasCapacity(tid, 'This trainer is at capacity.');
 
   await query(
     `INSERT INTO trainer_client (trainer_id, client_id, status, initiated_by)
@@ -455,7 +523,7 @@ export async function trainerClients(trainerId) {
   const clients = await query(
     `SELECT u.user_id, u.user_name, u.first_name, u.last_name, u.profile_image,
             us.logging_streak, us.time_zone,
-            (SELECT calorie_goal FROM userGoal WHERE user_id = u.user_id ORDER BY date_set DESC LIMIT 1) AS calorie_goal,
+            (SELECT calorie_goal FROM userGoal WHERE user_id = u.user_id ORDER BY date_set DESC, userGoal_id DESC LIMIT 1) AS calorie_goal,
             (SELECT weight FROM weight_log WHERE user_id = u.user_id ORDER BY date_logged DESC LIMIT 1) AS last_weight
        FROM trainer_client tc
        JOIN user u ON tc.client_id = u.user_id
@@ -482,6 +550,7 @@ export async function trainerClients(trainerId) {
     `SELECT t.client_id, COUNT(*) AS unread
        FROM pt_message m
        JOIN pt_thread t ON m.thread_id = t.thread_id
+       JOIN trainer_client tc ON tc.trainer_id = t.trainer_id AND tc.client_id = t.client_id AND tc.status = 'accepted'
       WHERE t.trainer_id = ? AND m.sender_role = 'client' AND m.seen_at IS NULL
       GROUP BY t.client_id`,
     [trainerId]
@@ -544,10 +613,28 @@ export async function clientDetail(trainerId, clientId) {
   }
 
   const goalRows = await query(
-    `SELECT calorie_goal FROM userGoal WHERE user_id = ? ORDER BY date_set DESC LIMIT 1`,
+    `SELECT calorie_goal, protein_goal, carbs_goal, fat_goal
+       FROM userGoal WHERE user_id = ? ORDER BY date_set DESC, userGoal_id DESC LIMIT 1`,
     [clientId]
   );
-  const calorie_goal = goalRows.length ? Number(goalRows[0].calorie_goal) : null;
+  const goalRow = goalRows[0] || null;
+  const calorie_goal = goalRow?.calorie_goal != null ? Number(goalRow.calorie_goal) : null;
+  const macro_goals = resolveMacrosFromGoalRow(goalRow);
+
+  // Recent weight trail (oldest -> newest) for a trend sparkline — the coach's
+  // single most useful outcome signal. Same source as the client list's last_weight.
+  const weightRows = await query(
+    `SELECT weight FROM weight_log WHERE user_id = ? ORDER BY date_logged DESC LIMIT 14`,
+    [clientId]
+  );
+  const ws = weightRows.map((r) => Number(r.weight));
+  const weight = ws.length
+    ? {
+        current: ws[0],
+        trend: ws.length > 1 ? Math.round((ws[0] - ws[ws.length - 1]) * 10) / 10 : null,
+        chart: ws.slice().reverse().map((w) => ({ weight: w })),
+      }
+    : null;
 
   const feedback = await query(
     `SELECT date_for, content FROM pt_feedback WHERE trainer_id = ? AND client_id = ? ORDER BY date_for DESC LIMIT 60`,
@@ -567,6 +654,8 @@ export async function clientDetail(trainerId, clientId) {
     })),
     trend,
     calorie_goal,
+    macro_goals,
+    weight,
     feedback: feedback.map((f) => ({ date_for: f.date_for, content: f.content })),
   };
 }
@@ -670,6 +759,8 @@ export async function pendingRequests(trainerId) {
 export async function respondRequest(trainerId, requestId, action) {
   let r;
   if (action === 'accept') {
+    // Re-check capacity at accept time (send-time is the only other guard).
+    await assertTrainerHasCapacity(trainerId, "You're at capacity.");
     r = await query(
       `UPDATE trainer_client SET status = 'accepted', responded_at = NOW()
         WHERE id = ? AND trainer_id = ? AND status = 'pending'`,
@@ -776,16 +867,7 @@ export async function inviteClient(trainerId, clientId) {
   }
 
   // Capacity: trainer's own accepted clients vs their max_clients.
-  const capRows = await query(
-    `SELECT p.max_clients,
-            (SELECT COUNT(*) FROM trainer_client tc WHERE tc.trainer_id = ? AND tc.status = 'accepted') AS cnt
-       FROM pt_profile p WHERE p.user_id = ? LIMIT 1`,
-    [trainerId, trainerId]
-  );
-  const cap = capRows[0];
-  if (cap && cap.max_clients != null && Number(cap.cnt) >= Number(cap.max_clients)) {
-    throw new PtActionError("You're at capacity.");
-  }
+  await assertTrainerHasCapacity(trainerId, "You're at capacity.");
 
   await query(
     `INSERT INTO trainer_client (trainer_id, client_id, status, initiated_by)
