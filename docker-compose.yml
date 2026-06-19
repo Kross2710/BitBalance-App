@@ -1,0 +1,62 @@
+# BitBalance — full self-hosted stack: Express app + MariaDB (+ optional ngrok).
+#
+#   cp .env.docker.example .env   # then edit secrets
+#   docker compose up -d --build
+#
+# See DOCKER.md for first-run data seeding, updates, and the tunnel.
+
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-bitbalance}
+      MARIADB_USER: ${DB_USER:-bituser}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+    volumes:
+      - db_data:/var/lib/mysql
+      # Every *.sql here is imported ONCE, on first init (empty volume only). Drop
+      # a dump of your existing DB in deploy/db-init/ to migrate data. See DOCKER.md.
+      - ./deploy/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # App config comes from .env; DB_HOST/PORT are overridden to reach the db service.
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: "3306"
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads:/app/server/uploads
+
+  # Optional public tunnel inside Docker. Enable with:
+  #   docker compose --profile tunnel up -d
+  # Requires NGROK_AUTHTOKEN + NGROK_DOMAIN in .env (the command passes --domain).
+  # Use EITHER this OR a host ngrok service — NOT both (free plan = one tunnel).
+  ngrok:
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    depends_on:
+      - app
+    command: http app:3000 --domain=${NGROK_DOMAIN:-}
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+
+volumes:
+  db_data:
+  uploads:

@@ -14,7 +14,11 @@ yarn-error.log*
 # Local environment files
 .env
 .env.*
+!.env.docker.example
 server/.env
+
+# DB seed dumps (contain user data)
+deploy/db-init/*.sql
 
 # Xcode user/build artifacts
 ios-swift/**/xcuserdata/

@@ -1,0 +1,15 @@
+# Keep the build context small and free of secrets/artefacts (the image rebuilds
+# deps and the SPA itself; env comes from compose, not a baked-in file).
+**/node_modules
+client/dist
+client/.vite
+server/uploads
+**/.env
+.git
+.github
+.claude
+# DB seed dumps stay out of the image; the db service bind-mounts them separately.
+deploy/db-init
+ios-swift
+**/*.md
+**/.DS_Store
