@@ -82,6 +82,18 @@ async function send() {
     const json = await res.json();
     if (!json.ok) throw new Error(json.message || t('intake.ai.failed'));
     const card = json.data;
+    // Issue #9: remember the model's original estimate so the user can adjust the
+    // portion (grams) and we recalibrate calories/macros proportionally from it.
+    if (card && card.food_name) {
+      card.__base = {
+        grams: card.portion_grams || 0,
+        calories: card.calories,
+        protein: card.protein,
+        carbs: card.carbs,
+        fat: card.fat,
+      };
+      card.__grams = card.__base.grams;
+    }
     // A short text summary doubles as the assistant turn's history content.
     const summary = card.food_name
       ? `${card.food_name} - ${card.calories} ${t('common.kcal')} (P${card.protein}/C${card.carbs}/F${card.fat})${card.short_advice ? '. ' + card.short_advice : ''}`
@@ -106,6 +118,21 @@ function addToLog(card) {
     fat: card.fat,
     image_path: card.image_path || '',
   });
+}
+
+// Issue #9: recalibrate the card when the user edits the portion in grams.
+// Scales calories and macros proportionally from the model's original estimate.
+function adjustGrams(card, grams) {
+  const base = card.__base;
+  if (!base || !base.grams || base.grams <= 0) return;
+  const g = Number(grams);
+  if (!Number.isFinite(g) || g <= 0) return;
+  const factor = g / base.grams;
+  card.portion_grams = Math.round(g);
+  card.calories = Math.round(base.calories * factor);
+  card.protein = Math.round(base.protein * factor * 10) / 10;
+  card.carbs = Math.round(base.carbs * factor * 10) / 10;
+  card.fat = Math.round(base.fat * factor * 10) / 10;
 }
 
 // Fresh chat each time it opens.
@@ -146,8 +173,15 @@ onBeforeUnmount(clearImage);
                 {{ $t('intake.macro_abbr.carbs') }} {{ m.card.carbs }}g ·
                 {{ $t('intake.macro_abbr.fat') }} {{ m.card.fat }}g
                 <span v-if="m.card.unit"> · {{ m.card.unit }}</span>
-              </div>
-              <p v-if="m.card.short_advice" class="advice">{{ m.card.short_advice }}</p>
+                </div>
+                <div v-if="m.card.__base && m.card.__base.grams > 0" class="portion">
+                <span class="portion-label">{{ $t('intake.ai.portion') }}:</span>
+                <input type="number" min="1" class="portion-input"
+                  :aria-label="$t('intake.ai.portion_label')"
+                  v-model.number="m.card.__grams" @input="adjustGrams(m.card, m.card.__grams)" />
+                <span>g</span>
+                </div>
+                <p v-if="m.card.short_advice" class="advice">{{ m.card.short_advice }}</p>
               <button type="button" class="addbtn" @click="addToLog(m.card)">
                 <i class="fa-solid fa-plus" /> {{ $t('intake.ai.add_to_log') }}
               </button>
@@ -243,6 +277,9 @@ onBeforeUnmount(clearImage);
 .food-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .food-head .cal { color: var(--accent); font-weight: 700; white-space: nowrap; }
 .macros { margin: 6px 0 0; }
+.portion { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 13px; }
+.portion .portion-label { color: #9aa0b1; }
+.portion-input { width: 88px; padding: 4px 8px; font-size: 13px; text-align: center; }
 .advice { margin: 8px 0 0; font-size: 13px; color: #c4b5fd; }
 .addbtn { margin-top: 10px; font-size: 13px; padding: 8px 14px; min-height: 0; }
 

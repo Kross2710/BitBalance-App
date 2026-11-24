@@ -6,7 +6,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { query } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { validateIntake, shapeEntry, dailySummary, fetchEntry, parseEstimate, ValidationError } from '../lib/intake.js';
+import { validateIntake, shapeEntry, dailySummary, fetchEntry, parseEstimate, rescaleMacrosToCalories, ValidationError } from '../lib/intake.js';
 import { ESTIMATE_BASE, CHAT_BASE } from '../lib/foodEstimatePrompt.js';
 import { lookupBarcode, BarcodeError } from '../lib/barcode.js';
 import { chatCompletion } from '../lib/aiProvider.js';
@@ -182,6 +182,10 @@ router.post('/estimate-photo', requireAuth, upload.single('image'), async (req, 
     if (!parsed) {
       return res.status(502).json({ ok: false, data: null, message: 'AI returned an unreadable estimate.' });
     }
+    // Backstop (issue #9): reconcile the model's macros with its calories so the
+    // logged entry is internally consistent — rescale when wildly off rather than
+    // trusting the model's split.
+    const reconciled = rescaleMacrosToCalories(parsed);
 
     // Persist the photo so the user can review it on the logged entry. The
     // client passes this image_path back on /create. Best-effort: if saving
@@ -193,7 +197,7 @@ router.post('/estimate-photo', requireAuth, upload.single('image'), async (req, 
       console.error('intake photo save error:', e);
     }
 
-    res.json({ ok: true, data: { ...parsed, image_path: imagePath }, message: null });
+    res.json({ ok: true, data: { ...reconciled, image_path: imagePath }, message: null });
   } catch (err) {
     next(err);
   }
@@ -298,6 +302,10 @@ router.post('/ai-chat', requireAuth, upload.single('image'), async (req, res, ne
       food_name: null, calories: 0, protein: 0, carbs: 0, fat: 0, unit: null,
       short_advice: String(result.text).trim().slice(0, 200) || 'Sorry, I could not read that.',
     };
+    // Backstop (issue #9): reconcile the model's macros with its calories so the
+    // logged entry is internally consistent — rescale when wildly off rather than
+    // trusting the model's split.
+    const reconciled = rescaleMacrosToCalories(parsed);
 
     let imagePath = null;
     if (req.file) {
@@ -308,7 +316,7 @@ router.post('/ai-chat', requireAuth, upload.single('image'), async (req, res, ne
       }
     }
 
-    res.json({ ok: true, data: { ...parsed, image_path: imagePath }, message: null });
+    res.json({ ok: true, data: { ...reconciled, image_path: imagePath }, message: null });
   } catch (err) {
     next(err);
   }

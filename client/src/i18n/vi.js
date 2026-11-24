@@ -450,6 +450,8 @@ export default {
   'intake.ai.thinking': 'Đang phân tích...',
   'intake.ai.couldnt_identify': 'Mình chưa nhận ra món nào. Thêm ảnh hoặc mô tả giúp mình nhé.',
   'intake.ai.add_to_log': 'Thêm vào nhật ký',
+  'intake.ai.portion': 'Phăn ăn',
+  'intake.ai.portion_label': 'ChỈnh Phăn ăn (gram)',
   'intake.ai.sent_photo': 'Ảnh',
   'intake.ai.failed': 'Không lấy được ước tính. Thử lại nhé.',
   'intake.what_did_you_eat': 'Bạn đã ăn gì?',
