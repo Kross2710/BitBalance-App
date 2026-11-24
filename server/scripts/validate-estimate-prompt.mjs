@@ -47,7 +47,7 @@ const prompts = new Set(['estimate']); // add 'chat' via --chat
 const images = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
-  if (a === '--negative') negatives.add(args[++i]);
+  if (a === '--negative') { const p = args[++i]; negatives.add(p); images.push(p); }
   else if (a === '--chat') prompts.add('chat');
   else if (a === '--temp') temps.add(args[++i]);
   else images.push(a);
@@ -130,6 +130,7 @@ for (const promptName of prompts) {
   const system = promptText[promptName];
   for (const [label, re] of STATIC) {
     const ok = re.test(system);
+    if (!ok) allPass = false;
     console.log(`[${promptName}] static  ${ok ? 'PASS' : 'FAIL'}  ${label}`);
   }
 
