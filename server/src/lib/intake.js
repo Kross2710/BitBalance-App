@@ -188,6 +188,9 @@ export function parseEstimate(text) {
   const name = parsed.food_name == null ? '' : String(parsed.food_name).slice(0, 80);
   return {
     food_name: name === '' ? null : name,
+    // Portion weight in grams the model estimated against a visual reference
+    // (issue #9). 0 when the model did not provide one or the image isn't food.
+    portion_grams: Math.max(0, Math.round(Number(parsed.portion_grams) || 0)),
     calories: Math.max(0, Math.round(Number(parsed.calories) || 0)),
     protein: round1(parsed.protein),
     carbs: round1(parsed.carbs),
