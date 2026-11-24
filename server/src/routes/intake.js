@@ -6,7 +6,8 @@ import { Router } from 'express';
 import multer from 'multer';
 import { query } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { validateIntake, shapeEntry, dailySummary, fetchEntry, parseEstimate, ValidationError } from '../lib/intake.js';
+import { validateIntake, shapeEntry, dailySummary, fetchEntry, parseEstimate, rescaleMacrosToCalories, ValidationError } from '../lib/intake.js';
+import { ESTIMATE_BASE, CHAT_BASE } from '../lib/foodEstimatePrompt.js';
 import { lookupBarcode, BarcodeError } from '../lib/barcode.js';
 import { chatCompletion } from '../lib/aiProvider.js';
 import { saveIntakeImage } from '../lib/uploads.js';
@@ -22,25 +23,9 @@ const aiLimitMsg = `Daily AI limit reached (${AI_DAILY_LIMIT}). Please try again
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const PHOTO_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
-// One-shot nutritionist prompt — ports the system prompt of dashboard/handlers/
-// ai_chat.php. Forces a raw JSON object describing the food in the photo.
-const ESTIMATE_BASE =
-  'You are a professional Nutritionist AI. Analyze the food in the image and estimate ' +
-  'the nutritional values for the portion shown. If the image is NOT food, set every ' +
-  'numeric field to 0 and food_name to "Not food". Reply with ONLY a raw JSON object ' +
-  '(no markdown, no code fences) of exactly this shape: ' +
-  '{"food_name":"Name","calories":0,"protein":0,"carbs":0,"fat":0,"unit":"1 serving","short_advice":"one short tip"}';
-
-// Chat-oriented nutritionist prompt for /ai-chat — like ESTIMATE_BASE but uses
-// the whole conversation so the user can correct the dish over multiple turns.
-const CHAT_BASE =
-  'You are a professional Nutritionist AI helping a user log a meal. Analyze the food in ' +
-  'the image and/or the text the user sends, and use the whole conversation for context — ' +
-  'the user may clarify or correct the dish (e.g. "it is actually pho bo"). Estimate the ' +
-  'nutrition for the portion described. Reply with ONLY a raw JSON object (no markdown, no ' +
-  'code fences) of exactly this shape: ' +
-  '{"food_name":"Name","calories":0,"protein":0,"carbs":0,"fat":0,"unit":"1 serving","short_advice":"one short tip"}. ' +
-  'If you cannot identify a food yet, set food_name to null and put a short clarifying question in short_advice.';
+// The one-shot (/estimate-photo) and chat (/ai-chat) nutritionist prompts now
+// live in server/src/lib/foodEstimatePrompt.js so the exact text can be tested.
+// They are imported below and appended with per-user voice/language guidance.
 
 // Macro-only estimate for the manual-entry path: the user already typed a dish
 // name and a FIXED calorie amount, so we ask the model for the protein/carbs/fat
@@ -197,6 +182,10 @@ router.post('/estimate-photo', requireAuth, upload.single('image'), async (req, 
     if (!parsed) {
       return res.status(502).json({ ok: false, data: null, message: 'AI returned an unreadable estimate.' });
     }
+    // Backstop (issue #9): reconcile the model's macros with its calories so the
+    // logged entry is internally consistent — rescale when wildly off rather than
+    // trusting the model's split.
+    const reconciled = rescaleMacrosToCalories(parsed);
 
     // Persist the photo so the user can review it on the logged entry. The
     // client passes this image_path back on /create. Best-effort: if saving
@@ -208,7 +197,7 @@ router.post('/estimate-photo', requireAuth, upload.single('image'), async (req, 
       console.error('intake photo save error:', e);
     }
 
-    res.json({ ok: true, data: { ...parsed, image_path: imagePath }, message: null });
+    res.json({ ok: true, data: { ...reconciled, image_path: imagePath }, message: null });
   } catch (err) {
     next(err);
   }
@@ -313,6 +302,10 @@ router.post('/ai-chat', requireAuth, upload.single('image'), async (req, res, ne
       food_name: null, calories: 0, protein: 0, carbs: 0, fat: 0, unit: null,
       short_advice: String(result.text).trim().slice(0, 200) || 'Sorry, I could not read that.',
     };
+    // Backstop (issue #9): reconcile the model's macros with its calories so the
+    // logged entry is internally consistent — rescale when wildly off rather than
+    // trusting the model's split.
+    const reconciled = rescaleMacrosToCalories(parsed);
 
     let imagePath = null;
     if (req.file) {
@@ -323,7 +316,7 @@ router.post('/ai-chat', requireAuth, upload.single('image'), async (req, res, ne
       }
     }
 
-    res.json({ ok: true, data: { ...parsed, image_path: imagePath }, message: null });
+    res.json({ ok: true, data: { ...reconciled, image_path: imagePath }, message: null });
   } catch (err) {
     next(err);
   }

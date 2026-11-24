@@ -188,11 +188,39 @@ export function parseEstimate(text) {
   const name = parsed.food_name == null ? '' : String(parsed.food_name).slice(0, 80);
   return {
     food_name: name === '' ? null : name,
+    // Portion weight in grams the model estimated against a visual reference
+    // (issue #9). 0 when the model did not provide one or the image isn't food.
+    portion_grams: Math.max(0, Math.round(Number(parsed.portion_grams) || 0)),
     calories: Math.max(0, Math.round(Number(parsed.calories) || 0)),
     protein: round1(parsed.protein),
     carbs: round1(parsed.carbs),
     fat: round1(parsed.fat),
     unit: parsed.unit ? String(parsed.unit).slice(0, 40) : null,
     short_advice: parsed.short_advice ? String(parsed.short_advice).slice(0, 200) : null,
+  };
+}
+
+// Reconcile the model's macros with its calorie figure so a logged estimate is
+// internally consistent (protein*4 + carbs*4 + fat*9 === calories). Mirrors the
+// 40% tolerance used by POST /estimate-macros: if the model's numbers are within
+// 40% we keep them; otherwise we rescale the macros proportionally to hit the
+// given calories. If the model returned no usable macros (all zero) we fall back
+// to the standard 30/45/25 split so the entry never logs 0/0/0 over non-zero
+// calories. Returns a new card; the input is not mutated.
+export function rescaleMacrosToCalories(card) {
+  const macroKcal = card.protein * 4 + card.carbs * 4 + card.fat * 9;
+  const calories = card.calories;
+  if (macroKcal > 0 && Math.abs(macroKcal - calories) <= calories * 0.4) {
+    return card;
+  }
+  if (macroKcal <= 0) {
+    return { ...card, ...macroGoalsFromCalories(calories) };
+  }
+  const factor = calories / macroKcal;
+  return {
+    ...card,
+    protein: round1(card.protein * factor),
+    carbs: round1(card.carbs * factor),
+    fat: round1(card.fat * factor),
   };
 }

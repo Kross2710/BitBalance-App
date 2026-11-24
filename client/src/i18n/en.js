@@ -451,6 +451,8 @@ export default {
   'intake.ai.thinking': 'Analyzing...',
   'intake.ai.couldnt_identify': "I couldn't identify a food yet. Add a photo or describe it.",
   'intake.ai.add_to_log': 'Add to log',
+  'intake.ai.portion': 'Portion',
+  'intake.ai.portion_label': 'Adjust portion (grams)',
   'intake.ai.sent_photo': 'Photo',
   'intake.ai.failed': 'Could not get an estimate. Try again.',
   'intake.what_did_you_eat': 'What did you eat?',
